@@ -249,7 +249,7 @@
   
   
   <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/11/leveldb_4_gc/">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/11/leveldb_3_version/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="name" content="neverchanje">
@@ -268,7 +268,7 @@
         
           <h2 class="post-title" itemprop="name headline">
                 
-                <a class="post-title-link" href="/2016/12/11/leveldb_4_gc/" itemprop="url">leveldb 源码解说(4)：Automatic Compaction / GC</a></h2>
+                <a class="post-title-link" href="/2016/12/11/leveldb_3_version/" itemprop="url">leveldb 源码解说(3)：Version 和 VersionSet</a></h2>
         
 
         <div class="post-meta">
@@ -318,37 +318,29 @@
       
         
           
-            <h2 id="DBImpl-MaybeScheduleCompaction"><a href="#DBImpl-MaybeScheduleCompaction" class="headerlink" title="DBImpl::MaybeScheduleCompaction"></a>DBImpl::MaybeScheduleCompaction</h2><p>leveldb 默认做单线程 GC，如果已有 GC 在后台运行，则不会去再开一个 GC 线程。其实复杂的策略应该支持多 GC 调度，后面我们应该可以在 rocksdb 里看到。</p>
-<p>简单情况下 GC 可以周期性地做，比如每隔 100ms 做一次。当然这在存储引擎里是行不通的，因为存储引擎永远无法预料何时突然迎来暴风骤雨般的写请求，这时候定时 GC 可能会帮倒忙。</p>
-<p>我罗列一下哪些地方会触发 GC（也就是触发 MaybeScheduleCompaction）：</p>
-<ul>
-<li>DBImpl::MakeRoomForWrite：后面会讲到。</li>
-<li>DBImpl::Open：启动的时候做一次 GC 准没错。不过我暂时没有比较有说服力的解释。</li>
-<li>DBImpl::Get：seek compaction 触发，后面会讲到。</li>
-<li>Manual Compaction。</li>
-</ul>
-<h2 id="DBImpl-BackgroundCompaction"><a href="#DBImpl-BackgroundCompaction" class="headerlink" title="DBImpl::BackgroundCompaction"></a>DBImpl::BackgroundCompaction</h2><p>GC 操作入口在这里。</p>
-<p>如果有 immutable memtable（我们简称 im-memtable） 还没刷到 L0 层，则 Ln 的 GC 推迟，先刷 im-memtable。换言之，im-memtable GC 的执行优先级比 Ln&gt;=0 GC 要高。这是因为如果 memtable 满了（大于 option.write_buffer_size），而 im-memtable 还没做 GC，整个 DB 都会被阻塞（DBImpl::MakeRoomForWrite，阻塞用的是一个 condition variable，bg_cv_）。本质上任何 Ln&gt;=0 层的 GC 都只是优化罢了，而 memtable 塞满造成 DB 阻塞是不可容忍的。</p>
-<p>接下来选择哪个 level 来做 compaction 呢？后面我们在 VersionSet::PickCompaction 会讲到。</p>
-<p>接着 GC 操作落到 DoCompactionWork。</p>
-<h2 id="DBImpl-DoCompactionWork"><a href="#DBImpl-DoCompactionWork" class="headerlink" title="DBImpl::DoCompactionWork"></a>DBImpl::DoCompactionWork</h2><p>在这里我们就会真正的做 Ln|Ln+1 compaction 了。用 MergingIterator 遍历所有的 keys，忽略那些 overlap 的 keys。最终新的数据会被写到。</p>
-<p>值得一提的是，每次遍历一个 key，都会检查一次 im-memtable（CompactMemtable），避免 GC 花的时间太长，阻塞了 memtable。</p>
-<p>随着程序运行，level n&gt;=0 会做 compaction，把数据清到 n+1 层。这里要考虑 在什么时候 leveldb 会让这个 level 做 compaction？<br>参考 <code>version_set.cc:Version::Builder::Apply</code> 底下的一段注释：</p>
-<h2 id="VersionSet-PickCompaction"><a href="#VersionSet-PickCompaction" class="headerlink" title="VersionSet::PickCompaction"></a>VersionSet::PickCompaction</h2><p>compaction 的选择策略有两种，一种是 seek compaction，一种是 size compaction。</p>
-<h3 id="seek-compaction"><a href="#seek-compaction" class="headerlink" title="seek compaction"></a>seek compaction</h3><p>这是由于某个文件的内容被过多访问（负载过大），多次 seek 的开销下，一次 compaction 的开销是可以容忍的。</p>
-<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// We arrange to automatically compact this file after</span></span><br><span class="line"><span class="comment">// a certain number of seeks.  Let's assume:</span></span><br><span class="line"><span class="comment">//   (1) One seek costs 10ms</span></span><br><span class="line"><span class="comment">//   (2) Writing or reading 1MB costs 10ms (100MB/s)</span></span><br><span class="line"><span class="comment">//   (3) A compaction of 1MB does 25MB of IO:</span></span><br><span class="line"><span class="comment">//         1MB read from this level</span></span><br><span class="line"><span class="comment">//         10-12MB read from next level (boundaries may be misaligned)</span></span><br><span class="line"><span class="comment">//         10-12MB written to next level</span></span><br><span class="line"><span class="comment">// This implies that 25 seeks cost the same as the compaction</span></span><br><span class="line"><span class="comment">// of 1MB of data.  I.e., one seek costs approximately the</span></span><br><span class="line"><span class="comment">// same as the compaction of 40KB of data.  We are a little</span></span><br><span class="line"><span class="comment">// conservative and allow approximately one seek for every 16KB</span></span><br><span class="line"><span class="comment">// of data before triggering a compaction.</span></span><br><span class="line">f-&gt;allowed_seeks = (f-&gt;file_size / <span class="number">16384</span>);</span><br><span class="line"><span class="keyword">if</span> (f-&gt;allowed_seeks &lt; <span class="number">100</span>) f-&gt;allowed_seeks = <span class="number">100</span>;</span><br><span class="line">levels_[level].deleted_files.erase(f-&gt;number);</span><br><span class="line">levels_[level].added_files-&gt;insert(f);</span><br></pre></td></tr></table></figure>
-<p>我们知道 <code>DBImpl::Get</code> 可能会从 memtable 中查，查不到就在 SSTable 中查。如果在某一个文件上的查询次数太多（多于 allowed_seeks，参考 <code>Version::UpdateStats</code>），则会针对这个文件进行一次 GC。上面的注释里说到了这么做的原因：一次查询的开销相当于对 40kb 做一次 compaction 的开销，所以对大小为 x 的文件做一次 compaction 的开销，等于 x/40kb 次查询的开销。而真实情况需要更保守，leveldb 选择在 x/16kb 次查询之后，就需要做一次 compaction。</p>
-<h3 id="size-compaction"><a href="#size-compaction" class="headerlink" title="size compaction"></a>size compaction</h3><p>这是由于某层的大小过大。我们在 <code>VersionSet::Finalize</code> 对其细细描述。</p>
-<p>当然如果两个 level 同时超过限制，两个 GC 会依次做，同一时间不会有两个 GC 在进行。GC 是一个后台线程，利用了 PosixEnv::Schedule，这是一个生产者消费者队列，当然消费者只有一个。</p>
-<h2 id="DBImpl-MakeRoomForWrite"><a href="#DBImpl-MakeRoomForWrite" class="headerlink" title="DBImpl::MakeRoomForWrite"></a>DBImpl::MakeRoomForWrite</h2><p>但这样在高并发写的场景下，Ln GC 可能会经常没有办法做，而 L0 会越积越多。为了防止这种情况发生，leveldb 给 L0 的大小设限（参考 config::kL0_SlowdownWritesTrigger）。当 L0 的大小超过了这个限制，在写操作执行之前，leveldb 会强制进行 Ln GC。这里 leveldb 不会让 GC 一次性全部完成，这样会导致 write latency 太大。所以我们总结 leveldb 的策略是，L0 过大的情况下，在写数据之前，先做短时间的（1ms，暂不可配置） GC。</p>
-<p>如果当前暂时不需要做 im-memtable GC，而我们的 L0 确实过大了（大于 config::kL0_StopWritesTrigger），则在写操作执行之前，整个 DB 会暂停下来先做 Ln GC。</p>
-<p>每次 memtable 一满，memtable 就把所有数据交给 im-memtable，然后自己创建一个新的，空的 memtable。DBImpl::CompactMemTable 用来把 im-memtable 写到 L0。当然，每次生成 L0 文件，都要用 VersionEdit 记录这次改动。</p>
-<p>Ln 把 compaction 的结果写到 Ln+1 层，那原来的 Ln 层就需要删了。另一方面由于引用计数机制，我们不能删计数器大于 1 的文件。这就是 DBImpl::DeleteObsoleteFiles()。</p>
-<p>Ln 和 Ln+1 两层合并的时候需要让能够 merge 的数据尽可能多，尽可能不会浪费（参考 VersionSet::SetupOtherInputs）。</p>
-<h2 id="VersionSet-Finalize"><a href="#VersionSet-Finalize" class="headerlink" title="VersionSet::Finalize"></a>VersionSet::Finalize</h2><p>size compaction 通过给各个 level 打分，评选出分数最高的 level 来做 compaction。</p>
-<h2 id="Compaction-ShouldStopBefore"><a href="#Compaction-ShouldStopBefore" class="headerlink" title="Compaction::ShouldStopBefore"></a>Compaction::ShouldStopBefore</h2><p>这里是让 Ln GC 提前结束的策略。这个策略很奇怪，避免 compaction 结果和 Ln+2 有过多重叠，</p>
-<h2 id="DBImpl-WriteLevel0Table"><a href="#DBImpl-WriteLevel0Table" class="headerlink" title="DBImpl::WriteLevel0Table"></a>DBImpl::WriteLevel0Table</h2><p>这里其实就是把 im-memtable 刷到 L0 的过程，一开始我以为很简单，一个写文件就好了。其实不然，没有人说 im-memtable 只能被刷到 L0。我们只要保证：如果一个 key 在 Ln 和 Lm 存在，且 m&gt;n，那么 Ln 上的 sequence number 大于 Lm 上的 sequence number。为什么不直接把 im-memtable 刷到 L0？很简单，为了减小 L0 compaction 的压力，把 GC 分散到下层，分散各层 GC 的负载。</p>
-<p>现在问题来了，im-memtable 应该被刷到哪个 level？我们找与 im-memtable 有 overlap 的那个 level n，则插入到 n-1 层。这样就能保证上述的要求。</p>
+            <p>在阅读这篇文章之前希望读者先阅读 <a href="https://github.com/facebook/rocksdb/wiki/MANIFEST" target="_blank" rel="noopener">rocksdb wiki 关于 Version 和 VersionEdit 的介绍</a>，其实很多东西在这里已经介绍的很清楚了。</p>
+<hr>
+<p>Version 和 VersionSet 是 leveldb 最乱的地方之一。看的时候要保持思考保持清醒（这是个软件工程问题）。先看 <code>Version::Get</code>。</p>
+<h2 id="Version"><a href="#Version" class="headerlink" title="Version"></a>Version</h2><p>Version 管理磁盘上所有文件的元信息（简单说就是所有 SSTables 的 metadata），比方说哪一层有哪些文件，并且为了提升效率，我们要在内存中维护这些文件的 FileMetaData，这样我们就不用每次都去读文件才能得知每个文件的 key range。这些元数据交给 Version 来维护。每次删掉一个文件，都会导致 Version 被改变，产生出一个新的 Version。能够表现当前 DB 状态的 Version，被称作 current version 。所有 Version 都被 VersionSet 用一个循环双向链表维护起来。</p>
+<p>其实这就有点类似 MVCC 了。MVCC 是数据库解决并发问题的时候一个很常见的概念。利用版本号的一种实现是，并发的时候数据行有多个版本用链表串在一起，写的时候拷贝一份快照出来写，加上版本号之后就变成新版本插到链表里，每个读事务只能读比自己版本号更小的，所以本质上读的时候可以进行写操作。（参考 张帅同学在知乎的回答）</p>
+<p>leveldb 也需要类似的思想。我们后面会讲到 leveldb compaction 的机制，简单说就是 leveldb 时不时的会对一些文件进行清理（可以看成是做压缩），然后把清理干净后的数据放到新的文件集合里，这样就导致同一份数据有两批文件，旧的那一批按道理应该删掉，但是如果现在有读事务在旧的那批文件上，则暂时还不能删。所以我们利用引用计数的机制，只要一个 Version 还存活着，那么它管理的所有文件都不会被删，而一旦 Version 生命周期结束，则它管理的所有文件引用计数全部减一（参考 Version::~Version），当没有一个 Version 引用这个文件，那这个文件就可以直接删了。在引用计数这一方面，还要考虑多个用户访问这个 Version 的情况。也就是说，除了文件要引用计数，Version 自己也要引用计数。</p>
+<p>这里有一点要注意，memtable 不归 current version 管理。只有磁盘上的数据才归 Version 管理。不过当然，memtable 本身也有引用计数。所以在 DBImpl::Get 的时候，current，memtable，im-memtable 的引用计数都会加 1，在结束的时候减一。这样就保证读的时候 memtable 不会突然被删。</p>
+<h2 id="Version-Get"><a href="#Version-Get" class="headerlink" title="Version::Get"></a>Version::Get</h2><p><code>Version::Get()</code> 查询一个 key 对应的 value，这是 leveldb 查询 key 的核心过程（划重点）。了解这步操作之前，我们首先需要知道 leveldb 的大致执行流程：首先数据会先写到 memtable，当 memtable 超过一定大小限制，数据会被持久化到 L0，为了避免在写到 L0 的同时 memtable 不可写的情况，memtable 会专门拷贝一份到 immutable memtable，顾名思义是只读的，相当于一份快照，然后利用 immutable memtable 把这份快照写到 L0。</p>
+<p>执行到 <code>Version::Get</code> 这步之前（参照 <code>DBImpl::Get</code>），我们已经得知 memtable 和 immutable memtable 中没有对应 key，所以我们从 SSTable 中查（这里说的不够准确，后续再提）。查询过程显然是从上到下（level 0 -&gt; level 1 -&gt; … ）逐层遍历，这是因为 LSM tree 已经定义越新的越处于上层，所以我们一定是选择版本最新的，即含有 key 的最上层。</p>
+<p>对于每一层的查询，首要的一个逻辑是定位 key 在哪一个文件，然后定位 key 在这个文件的位置，最终获得 key 的 value。</p>
+<ol>
+<li>在 level 0 定位 key：所以我们可以按照 file number 从大到小排序（越大的越新）然后依次遍历，每个文件都会有一个 key range（参照 FileMetaData），如果我们的 key 在该 range 里，则我们尝试在该文件里二分查找这个 key，如果 key 不在 range 里则 continue。通过 key range 过滤只是一种比较简单的优化，在 L0 的查询终究是比较慢的，所以 L0 的文件数必须要足够少（最坏情况下每个文件都要读一遍）。</li>
+<li>在 level n (n&gt;0) 定位 key：在 level n &gt; 0 上，SSTables 之间的 key ranges 不会相交，我们可以利用这点进行二分找到指定文件 （参照 version_set.c:FindFile），然后在文件里进行二分找到 key（参照 TableCache::Get）。</li>
+<li>如果找到的 key 对应的是 Delete record，那说明这个 key 已经被删了，返回 Status::NotFound。</li>
+</ol>
+<p><code>Version::Get</code> 最后会返回 key 对应的 value，key 所在的文件（GetStats）。</p>
+<h2 id="VersionSet-LogAndApply"><a href="#VersionSet-LogAndApply" class="headerlink" title="VersionSet::LogAndApply"></a>VersionSet::LogAndApply</h2><p>顾名思义这个函数是用来把 VersionEdit 加到 Version 里成为新的 Version。同时这个过程也会持久化到 Manifest 上。由于涉及到磁盘 IO，不可能在每次 version 改变的时候都执行一次 LogAndApply，通常是批量做。因此，VersionEdit 中包含了一系列对 Version 的修改，包括添加了某个文件，删除了某个文件。把 VersionEdit 加到 Version 里的过程本质和 git commit 是一样的，都是旧版本经过一系列修改之后产生新版本，使用 VersionSet::Builder 执行这段过程，算法很简单，实现看起来却很复杂。</p>
+<p>写 MANIFEST 的过程我们知道就是一个写日志的过程，每条 record 意味着有一组的元数据被改变， 每组改变用 VersionEdit 构造，然后 <code>VersionEdit::EncodeTo</code> 写到 record 字符串，最后用 <code>log::Writer::AddRecord</code> 写到日志里。VersionEdit 的内部构造会保证 record 的 compactness（record 里的元数据是 key value 表示，key 是元数据类型，使用 enum 标记，用 varint 存储，不同类型的元数据 value 存储方式不一样，使用 varint 和 varstring 结合存储）。</p>
+<p>这里可以总结一下，有下面几个操作会执行 LogAndApply：</p>
+<ol>
+<li>memtable 刷到 L0 的时候（<code>DBImpl::CompactMemtable</code>），VersionEdit 会在这里记录新的 wal 编号，将 L0 的 FileMetaData 维护起来。</li>
+<li>进行 compaction 的时候。VersionEdit 会记录 compaction 导致的文件增加和删除操作。</li>
+</ol>
 
           
         
