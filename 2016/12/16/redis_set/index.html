@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="redis," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="SET key value虽然 value 的类型固定是 string（可以使用 TYPE key 查看，对应的是 redisObject::type），但是 value 可能有多种 encodings。 12345678910&amp;gt; SET key 10000OK&amp;gt; TYPE key&amp;quot;string&amp;quot;&amp;gt; STRLEN key(integer) 5#########">
+<meta name="keywords" content="redis">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis Internals, SET key value">
+<meta property="og:url" content="http://yoursite.com/2016/12/16/redis_set/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="SET key value虽然 value 的类型固定是 string（可以使用 TYPE key 查看，对应的是 redisObject::type），但是 value 可能有多种 encodings。 12345678910&amp;gt; SET key 10000OK&amp;gt; TYPE key&amp;quot;string&amp;quot;&amp;gt; STRLEN key(integer) 5#########">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T12:39:02.776Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis Internals, SET key value">
+<meta name="twitter:description" content="SET key value虽然 value 的类型固定是 string（可以使用 TYPE key 查看，对应的是 redisObject::type），但是 value 可能有多种 encodings。 12345678910&amp;gt; SET key 10000OK&amp;gt; TYPE key&amp;quot;string&amp;quot;&amp;gt; STRLEN key(integer) 5#########">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/12/16/redis_set/"/>
+
+
+
+
+
+  <title>Redis Internals, SET key value | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/16/redis_set/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis Internals, SET key value</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-12-16T00:00:00+08:00">
+                2016-12-16
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="SET-key-value"><a href="#SET-key-value" class="headerlink" title="SET key value"></a>SET key value</h2><p>虽然 value 的类型固定是 string（可以使用 TYPE key 查看，对应的是 redisObject::type），但是 value 可能有多种 encodings。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">&gt; SET key 10000</span><br><span class="line">OK</span><br><span class="line">&gt; TYPE key</span><br><span class="line">&quot;string&quot;</span><br><span class="line">&gt; STRLEN key</span><br><span class="line">(integer) 5</span><br><span class="line">################################################</span><br><span class="line">虽然我们看到的类型是 string，其实底层用 long 存储。</span><br><span class="line">这里有点欺骗用户的意思，不过想想 redis 协议应该是</span><br><span class="line">想隐藏底层存储的细节。</span><br></pre></td></tr></table></figure>
+<h2 id="Encodings"><a href="#Encodings" class="headerlink" title="Encodings"></a>Encodings</h2><p>（参考 <code>object.c:tryObjectEncoding</code>）</p>
+<p>熟悉序列化的肯定知道，8 字节 long 能存 20 个字符长度的整型数（LONG_MAX=9223372036854775807，算上负号就是20字符），对于大整数应该选用 long 而非 string。所以当 value 是一个整数，redis 尝试将其存储为 long。</p>
+<p>这种方案显然对于小整数不友好，比如 long 存储整数 10 至少需要 8 bytes（64位机），而 string 只需要 3 bytes（使用 sds）。对于这个问题的一种优化方案是，对于小整数，我们仍然使用 sds 存储，大整数用 long 存储。redis 的优化方案更优秀。redis 将 0-10000 的整数放在公有常量池。这点在大量存储整数的场景，应该能够极大提高系统的最大负载。</p>
+<h2 id="Embeded-String（new-feature-in-3-0）"><a href="#Embeded-String（new-feature-in-3-0）" class="headerlink" title="Embeded String（new feature in 3.0）"></a>Embeded String（new feature in 3.0）</h2><p>我们知道，value 的值存在 redisObject::ptr。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">redisObject</span> &#123;</span></span><br><span class="line">    <span class="keyword">unsigned</span> type:<span class="number">4</span>;</span><br><span class="line">    <span class="keyword">unsigned</span> encoding:<span class="number">4</span>;</span><br><span class="line">    <span class="keyword">unsigned</span> lru:LRU_BITS; <span class="comment">/* LRU time (relative to server.lruclock) or</span></span><br><span class="line"><span class="comment">                            * LFU data (least significant 8 bits frequency</span></span><br><span class="line"><span class="comment">                            * and most significant 16 bits decreas time). */</span></span><br><span class="line">    <span class="keyword">int</span> refcount;</span><br><span class="line">    <span class="keyword">void</span> *ptr;</span><br><span class="line">&#125; robj;</span><br></pre></td></tr></table></figure>
+<h2 id="embeded-string-的-cacheline-优化"><a href="#embeded-string-的-cacheline-优化" class="headerlink" title="embeded string 的 cacheline 优化"></a>embeded string 的 cacheline 优化</h2><p>我们知道，sds 有一点很特别，就是它的内存布局是连续的</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">|----sdshdr----|----data----|</span><br></pre></td></tr></table></figure>
+<p>这意味着，每次去对 data 进行扩容，不光 data 要搬家，sdshdr 也要搬家。sdshdr 不大（有兴趣可以阅读 redis sds 的实现），所以搬家压力不大。一般的策略上，sdshdr 和 data 应该分两块内存区，这样 data 搬家的时候，sdshdr 不会搬。而 sds 设计成连续的，有各方面原因，其中一方面是可以优化 cache line，减少 cache misses。</p>
+<p>我们这里讲清楚 cache line 优化的问题：在 cpu 访问 sdshdr 的时候，data 区前面的一部分也会被一起读入 cacheline。cacheline 的大小通常是 64 bytes，假如我们想把 sds 全部放到 cacheline，除去 sdshdr 的 3 bytes（sdshdr8）和 null terminator ‘\0’，还有 60 bytes 的数据会读入 cacheline。当然，如果 sds 的数据量远大于 60 bytes，那其实 cacheline 的优化就可以忽略不计。</p>
+<p>现在回头看 redisObject，它的 header 有 16 bytes，64bytes 的 cacheline 除去 robj header，有 48 bytes。这个大小可以容纳 sdshdr8 的 sds，扣掉 sdshdr8 占用的 3 bytes，还有 sds 的末尾 ‘\0’，实际能够读入 cacheline 的数据量可以在 44 bytes。</p>
+<p>所以 redis 在这里做了这么一个优化：如果数据长度小于等于 44 bytes（OBJ_ENCODING_EMBSTR_SIZE_LIMIT），就用 sds 的方法，将 robj header 和实际数据连在一起放置。</p>
+<h2 id="公有常量池"><a href="#公有常量池" class="headerlink" title="公有常量池"></a>公有常量池</h2><p>前面说 SET key value 存储 value 时，如果 value 是一个小于 10000 的整数，则 redis 将 key 指向公有常量池里值为 value 的 robj。这样可以有很多个 keys 共享一个 value。这个思想可以放在很多地方。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">sharedObjectsStruct</span> &#123;</span></span><br><span class="line">    robj *crlf, *ok, *err, *emptybulk, *czero, *cone, *cnegone, *pong, *space,</span><br><span class="line">    *colon, *nullbulk, *nullmultibulk, *queued,</span><br><span class="line">    *emptymultibulk, *wrongtypeerr, *nokeyerr, *syntaxerr, *sameobjecterr,</span><br><span class="line">    *outofrangeerr, *noscripterr, *loadingerr, *slowscripterr, *bgsaveerr,</span><br><span class="line">    *masterdownerr, *roslaveerr, *execaborterr, *noautherr, *noreplicaserr,</span><br><span class="line">    *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,</span><br><span class="line">    *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *unlink,</span><br><span class="line">    *rpop, *lpop, *lpush, *emptyscan,</span><br><span class="line">    *select[PROTO_SHARED_SELECT_CMDS],</span><br><span class="line">    *integers[OBJ_SHARED_INTEGERS],</span><br><span class="line">    *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], <span class="comment">/* "*&lt;value&gt;\r\n" */</span></span><br><span class="line">    *bulkhdr[OBJ_SHARED_BULKHDR_LEN];  <span class="comment">/* "$&lt;value&gt;\r\n" */</span></span><br><span class="line">    sds minstring, maxstring;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/redis/" rel="tag"># redis</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/12/14/redis_sds/" rel="next" title="Redis Internals, sds">
+                <i class="fa fa-chevron-left"></i> Redis Internals, sds
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/12/19/redis_data_manipulation/" rel="prev" title="Redis Internals, Data Manipulation Operations">
+                Redis Internals, Data Manipulation Operations <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#SET-key-value"><span class="nav-number">1.</span> <span class="nav-text">SET key value</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Encodings"><span class="nav-number">2.</span> <span class="nav-text">Encodings</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Embeded-String（new-feature-in-3-0）"><span class="nav-number">3.</span> <span class="nav-text">Embeded String（new feature in 3.0）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#embeded-string-的-cacheline-优化"><span class="nav-number">4.</span> <span class="nav-text">embeded string 的 cacheline 优化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#公有常量池"><span class="nav-number">5.</span> <span class="nav-text">公有常量池</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

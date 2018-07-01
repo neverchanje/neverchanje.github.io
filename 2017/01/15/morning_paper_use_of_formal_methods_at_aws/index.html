@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="morningpaper," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="我个人非常喜欢这篇文章。写好一篇文章其实不容易，首先要梳理好文章脉络，然后以读者的角度数易其稿，方能发表。不像我写博客，想到哪写到哪。 这是一篇 technical report。文章所讲述的是 AWS 将形式化方法广泛应用在工程上的经验和心得。AWS 从 2011 年开始使用 TLA+ 来证明分布式系统设计的正确性。TLA+ 是 Leslie Lamport 开发的（膜）一种专门用于形式化并发系">
+<meta name="keywords" content="morningpaper">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Morning Paper - Use of Formal Methods at Amazon Web Services">
+<meta property="og:url" content="http://yoursite.com/2017/01/15/morning_paper_use_of_formal_methods_at_aws/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="我个人非常喜欢这篇文章。写好一篇文章其实不容易，首先要梳理好文章脉络，然后以读者的角度数易其稿，方能发表。不像我写博客，想到哪写到哪。 这是一篇 technical report。文章所讲述的是 AWS 将形式化方法广泛应用在工程上的经验和心得。AWS 从 2011 年开始使用 TLA+ 来证明分布式系统设计的正确性。TLA+ 是 Leslie Lamport 开发的（膜）一种专门用于形式化并发系">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:image" content="http://og0xhkmh3.bkt.clouddn.com/TLA_application_at_aws.PNG">
+<meta property="og:updated_time" content="2018-07-01T09:07:30.436Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Morning Paper - Use of Formal Methods at Amazon Web Services">
+<meta name="twitter:description" content="我个人非常喜欢这篇文章。写好一篇文章其实不容易，首先要梳理好文章脉络，然后以读者的角度数易其稿，方能发表。不像我写博客，想到哪写到哪。 这是一篇 technical report。文章所讲述的是 AWS 将形式化方法广泛应用在工程上的经验和心得。AWS 从 2011 年开始使用 TLA+ 来证明分布式系统设计的正确性。TLA+ 是 Leslie Lamport 开发的（膜）一种专门用于形式化并发系">
+<meta name="twitter:image" content="http://og0xhkmh3.bkt.clouddn.com/TLA_application_at_aws.PNG">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2017/01/15/morning_paper_use_of_formal_methods_at_aws/"/>
+
+
+
+
+
+  <title>Morning Paper - Use of Formal Methods at Amazon Web Services | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2017/01/15/morning_paper_use_of_formal_methods_at_aws/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Morning Paper - Use of Formal Methods at Amazon Web Services</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2017-01-15T00:00:00+08:00">
+                2017-01-15
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>我个人非常喜欢这篇文章。写好一篇文章其实不容易，首先要梳理好文章脉络，然后以读者的角度数易其稿，方能发表。不像我写博客，想到哪写到哪。</p>
+<p>这是一篇 <a href="http://glat.info/pdf/formal-methods-amazon-2014-11.pdf" target="_blank" rel="noopener">technical report</a>。文章所讲述的是 AWS 将形式化方法广泛应用在工程上的经验和心得。AWS 从 2011 年开始使用 TLA+ 来证明分布式系统设计的正确性。TLA+ 是 Leslie Lamport 开发的（膜）一种专门用于形式化并发系统或分布式系统的语言。最初我是看到 Raft 的 Specification 是用 TLA+ 形式化描述的，才了解到了这个工具，然后读到了这篇文章。经过 TLA+ 描述之后，我们可以使用 TLC 进行 model checking，验证设计的正确性。</p>
+<p>通常我们设计分布式系统要考虑各种 corner cases，然而时不时还是会有意想不到的 bug 出现。随着业务量的剧增，这在 AWS 是不可接受的。AWS 一开始的开发流程基于传统的方法，讲起来已经比较完善了。Design Review，Code Review，Static Code Analysis，Stress Testing，Fault-injection Testing，在国内如果流程这么完善已经非常优秀的团队了吧。然而还是不够，多种小概率事件的组合发生，还是会引发深埋逻辑里的问题。更多地，像 TLA+ 这样的方法，能够让研发人员对系统更 Confident，这非常重要。</p>
+<p>此前我们描述一个设计的时候，会专门编写复杂的文档，然而当系统经过长时间的演化，每一个新的改动可能都需要我们考虑其对系统正确性的影响。这很麻烦。麻烦归麻烦，做还是要做的。为了减少工作量，我们可以只对核心关键的组件进行正确性证明，当然这就牺牲了一定的严谨性，牺牲一定的 confidence。还有一种方法是手写状态机，文章中提到 S3 团队画出了一个复杂的状态机，然后跑 Java 来暴力做模型检验。我挺佩服这种举措的，当然用 TLA+ 能够更好地解决这个问题。</p>
+<p>文章里讲到他们对比过 Alloy 和 TLA+，最终他们发现 TLA+ 的表达能力更强，这是他们最早将其工程化的尝试。最早尝到甜头的这个工程师，试图将经验分享给其他人。然而大家一听到这么学术化的东西，立刻就敬而远之，无人跟进。</p>
+<p>形式化方法这个名词听起来就难以让大众所接受，而 TLA+，一看就是实验室里跳出来的，没办法在工业界应用的样子。</p>
+<p>后来，在 DynamoDB 开发的时候，他们 Mock 了各种网络层的故障可能，用来做 fault-injection。另一方面他们做了一些 informal proofs，保证设计的正确性，然而还是不够，还是不能保证设计没问题。设计有问题，代码就几乎不可能没问题。最终当然，DynamoDB 使用了 TLA+，效率迅速提高，甚至 Dynamo 的作者提到了，早知道有 TLA+，那他一定一开始就用了。</p>
+<p>即使这个技术再好，如果宣传上不够接地气，还是难以推广。作者希望这个技术能够在公司范围内普及，所以他们在 slides 的一开始，没有提到 TLA+，没有提到形式化，没有提到验证（verification），很取巧地，他们把标题定为 Debugging Designs。这是个很好的经验，任何领域的技术人都需要这种技术推广的技巧。反观国内很多技术分享，要么没有考虑听众感受，没有重点；亦或者直接分享水货，大家都能听懂，但并没有什么意思。</p>
+<p>后来 S3 团队也采纳了，并且他们发现 <a href="http://research.microsoft.com/en-us/um/people/lamport/tla/pluscal.html" target="_blank" rel="noopener">PlusCal</a> 更好用。PlusCal 可以用一种更像 C 的方式做设计，不像 TLA+ 那么数学化。PlusCal 可以被转换成 TLA+，然后用 TLC 做模型检验。</p>
+<p><img src="http://og0xhkmh3.bkt.clouddn.com/TLA_application_at_aws.PNG" alt="TLA+ at aws"></p>
+<p>可以看到 TLA+ 帮助 AWS 解决了许多设计缺陷。除此之外它还有一些 side affects：</p>
+<ul>
+<li><p>把系统设计形式化，可以让系统研发者更理解自己的设计。</p>
+</li>
+<li><p>梳理了整个流程之后，我们可以更好地在流程之中做 Assertion。原来我们也会经常写 assertions（感觉国内团队是不是做的少一点），但是会遇到一个问题是我们并不是总能 assert 到关键的点。有了形式化的方法，我们可以按照 spec，让代码不会违反这些保证系统正确性的 invariants。</p>
+</li>
+</ul>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/morningpaper/" rel="tag"># morningpaper</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2017/01/08/sofa_pbrpc_http/" rel="next" title="baidu sofa-pbrpc 源码阅读：HTTP">
+                <i class="fa fa-chevron-left"></i> baidu sofa-pbrpc 源码阅读：HTTP
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2017/01/23/jmiss_sentinel/" rel="prev" title="从 JIMDB sentinel 到 Health Check">
+                从 JIMDB sentinel 到 Health Check <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+
+      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

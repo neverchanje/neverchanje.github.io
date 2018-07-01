@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="raft," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="为了更好地拉人入坑，我决定写篇关于 raft 的教程出来，尽可能深入浅出一些，让甚至是没接触分布式系统的同学也能理解。paper 还是要看的，只不过这篇文章希望做一个概览。 继续广告，我的项目在： neverchanje/yaraft neverchanje/consensus-yaraft  Raft 解决的问题很简单，就是让多个副本的日志数据达成一致。举个例子，就是地球上发生了几个事件，称作">
+<meta name="keywords" content="raft">
+<meta property="og:type" content="article">
+<meta property="og:title" content="快速理解一致性协议 raft">
+<meta property="og:url" content="http://yoursite.com/2017/10/25/raft/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="为了更好地拉人入坑，我决定写篇关于 raft 的教程出来，尽可能深入浅出一些，让甚至是没接触分布式系统的同学也能理解。paper 还是要看的，只不过这篇文章希望做一个概览。 继续广告，我的项目在： neverchanje/yaraft neverchanje/consensus-yaraft  Raft 解决的问题很简单，就是让多个副本的日志数据达成一致。举个例子，就是地球上发生了几个事件，称作">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:image" content="http://og0xhkmh3.bkt.clouddn.com/raft/campaign.jpg">
+<meta property="og:updated_time" content="2018-07-01T12:22:19.064Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="快速理解一致性协议 raft">
+<meta name="twitter:description" content="为了更好地拉人入坑，我决定写篇关于 raft 的教程出来，尽可能深入浅出一些，让甚至是没接触分布式系统的同学也能理解。paper 还是要看的，只不过这篇文章希望做一个概览。 继续广告，我的项目在： neverchanje/yaraft neverchanje/consensus-yaraft  Raft 解决的问题很简单，就是让多个副本的日志数据达成一致。举个例子，就是地球上发生了几个事件，称作">
+<meta name="twitter:image" content="http://og0xhkmh3.bkt.clouddn.com/raft/campaign.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2017/10/25/raft/"/>
+
+
+
+
+
+  <title>快速理解一致性协议 raft | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2017/10/25/raft/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">快速理解一致性协议 raft</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2017-10-25T00:00:00+08:00">
+                2017-10-25
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>为了更好地拉人入坑，我决定写篇关于 raft 的教程出来，尽可能深入浅出一些，让甚至是没接触分布式系统的同学也能理解。paper 还是要看的，只不过这篇文章希望做一个概览。</p>
+<p>继续广告，我的项目在：</p>
+<p><a href="https://github.com/neverchanje/yaraft" target="_blank" rel="noopener">neverchanje/yaraft</a></p>
+<p><a href="https://github.com/neverchanje/consensus-yaraft" target="_blank" rel="noopener">neverchanje/consensus-yaraft</a></p>
+<hr>
+<p>Raft 解决的问题很简单，就是让多个副本的日志数据达成一致。举个例子，就是地球上发生了几个事件，称作 {1,2,3}。A 是某国家主席（称为 leader），它得知事件是 {1,2,3}；B, C 是香港记者（称为 follower），它们只知道事件 {1,2}。如何让 A, B, C 对事件集合达成一致，就是 Raft 所需要解决的问题。</p>
+<p>很简单的，leader 需要告知其他 followers，发生了事件 3，并且它发生在事件 1,2 之后。</p>
+<p>接下来正经点说。</p>
+<p>分布式系统里，机器时不时就会崩，网络时不时就会抖。当然如果你把 timeout 设置到 10s，出错的概率其实不会很高，但这就意味着你的系统有最高 10s 的不可用时间。</p>
+<p>所以我们引出了几个需求：</p>
+<ul>
+<li><p>数据不能丢，需要多节点备份</p>
+</li>
+<li><p>有一定的容错能力（fault tolerance），少数节点的网络抖动不会对多数节点造成影响。</p>
+</li>
+</ul>
+<p>这个问题发展出了一套理论，我只简单地讲讲：</p>
+<ol>
+<li><p>考虑 2N+1 个节点。一份数据，至少需要复制到 N+1 个节点上才算是提交（commit），否则可能出现冲突。比方说事件 x=1 发到 N 个节点，同时事件 x=2 发到另外 N 个节点。如果 x=1 和 x=2 同时提交了，最终 x 的值是多少很难说清。这和多线程锁是一样的。2N 个节点的情况也同理。</p>
+</li>
+<li><p>一份数据复制到 N 个节点上，如果要容忍 K 个错误，需要 <code>K &lt; N</code>，这样才能保证复制到 N 个节点满足数据提交的要求。也就是说，N 个节点，最多容忍 N-1 个错误。</p>
+</li>
+</ol>
+<p>我也时常在想一个问题，为什么多数一致性协议都要求过半节点复制成功才算提交？3 个节点，复制到 2 个才算提交（2/3）；5 个节点，复制到 3 个才算提交（3/5）。为什么没有一个专门优化 4/6 或者 4/5 的协议？</p>
+<p>我觉得可能是“过半”这个 constraint 足够松，它能够最大程度容忍错误，能够最小程度上保证提交。</p>
+<p>思考日志分发（log replication），可以围绕这个简单点考虑：</p>
+<p><strong>leader 将日志发给 follower，过半就算提交。</strong></p>
+<p>假设 5 个节点，假设 leader 永远在任，那么除非有 3 个 followers 全部失效，否则系统没有问题。follower 一切坚持以 leader 为主导，深入贯彻其基本思想，只要 leader 是对的，即便有 follower 赶不上，leader 也能把它往前拉。</p>
+<p>然而 leader 也是会意外下马的（比如陈水扁），一旦 leader 出事，问题就来了。上一任 leader 说过的话，算不算数呢？应该听当前这一任 leader 的，还是听上一任的？</p>
+<p>我们为每一届选举，标记一个任期 term。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">A (Leader): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt; &lt;index: 3, term: 3&gt;</span><br><span class="line">B (Follower): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt; &lt;index: 3, term: 2&gt;</span><br><span class="line">C (Follower): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt;</span><br></pre></td></tr></table></figure>
+<p>A 当选了新的 leader，他是在第三届选举当选的，所以当前 term 为 3。B，C 为 follower。A 和 B 存在冲突。A 认为地球上发生了三件事，第三件事是在 term=3 的时候发生的，而 B 认为第三件事是在上一任 leader 在的时候（term=2）发生的。</p>
+<p>因为 A 有最大话语权，所以 B 只能乖乖听话，修改记录：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">B (Follower): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt; &lt;index: 3, term: 3&gt;</span><br></pre></td></tr></table></figure>
+<p>Raft 的选举也是如日志分发类似，过半节点认同候选人（candidate），它才能当选 leader。</p>
+<p>过程大概是 candidate 发起投票，follower 可以投同意票，也可以投反对票。过半的 follower 同意，则 candidate 当选为 leader。</p>
+<p>显然，这样每一届选举，只能选出一个 leader。</p>
+<p><strong>群众要为选举出来的 leader 负责。</strong></p>
+<p>假设 A, B, C 把 C 选举出来作为 leader，那么惨剧就目不忍视了：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">A (Follower): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt; &lt;index: 3, term: 3&gt;</span><br><span class="line">B (Follower): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt; &lt;index: 3, term: 3&gt;</span><br><span class="line">C (Leader): &lt;index: 1, term: 2&gt; &lt;index: 2, term: 2&gt;</span><br></pre></td></tr></table></figure>
+<p>虽然 <code>&lt;index: 3, term: 3&gt;</code> 这条日志已经提交（复制过半），C 依然会无情地将它们抹去。</p>
+<p>这是不合理的。好比如 A 和 B 在 <code>&lt;index: 3, term: 3&gt;</code> 确立了社会主义，结果 C 一上来就要改革为农奴制，而没有取得 A, B 的共识。</p>
+<p>所以在 Raft 中，C 是永远不能当选为 leader 的。A, B 会认为 C 不够新。过半的节点认为它不够新，C 就不可能当选。</p>
+<p>考虑网络的异步化，真实网络很难让我们再用现实世界举例。现实中上一任主席通常不会对当下的国家再下命令（垂帘听政的意思），而网络中却时有发生。</p>
+<p>比如第三届选举当选的主席，却收到第二届选举发起的投票，这是不合常理的。这时候它不会去投票，而是会直接无视。</p>
+<p>所以，term 就成了是否忽略消息的重要依据。每个节点都具有一个属性，称为 currentTerm，每条消息都会携带发送者的 term。收到任何消息时，节点都会判断消息是否来自于以前的 term（<code>term &lt; currentTerm</code>），如果是的话，直接无视。</p>
+<p>term = 3 的节点收到消息 term=5，这意味着什么？意味着：</p>
+<p>节点长期与其他节点隔离，以至于第四届，第五届选举时，投票没有通知他。</p>
+<p>即便它贵为 term=3 的 leader，如今它也应该下台做 term=5 的 follower。</p>
+<p>考虑网络异步化，我们重新整理 leader 选举的过程。</p>
+<p>candidate 发起投票，消息中会携带它的 currentTerm。它可能出现 term 过低，被人无视的处境。此时 candidate 的本届选举相当于失败，它应当进行下一届选举（curentTerm++）。因为他坚信，leader 已经下台了。</p>
+<p>follower 收到 candidate 的投票，如果投票的 term 足够大（比如 currentTerm=2，消息 term=3），follower 就会同意，并将自己的 currentTerm 设为 3。</p>
+<p><img src="http://og0xhkmh3.bkt.clouddn.com/raft/campaign.jpg" alt=""></p>
+<p>（term = 3 的 candidate 发起投票，S2，S3，S5 同意）</p>
+<p>candidate 收到过半的 follower 同意，则它当选 leader。</p>
+<p>好了，我们再整理一个问题：candidate 发起投票，原因是 leader 下台，需要换届。而它又是如何得知 leader 是否下台的？</p>
+<p>在平时，leader 会发送心跳（heartbeat）给所有 followers，告诉它们自己还活着。一旦 leader 失效，followers 没有收到心跳，那么它们自然会选举出新的 leader。</p>
+<p>所以可能某个 candidate 发起投票，却被所有人无视，但只要他坚信 leader 已经下台（没收到任何来自 leader 的消息），那么他依然会发起新的选举。</p>
+<p>到此这篇教程就结束了，Raft 论文中还有一些需要体会的内容，但对初识一致性协议的同学来说不那么重要。文章中有错误的地方欢迎指正，有不理解或者批评的地方也欢迎提出。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/raft/" rel="tag"># raft</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2017/08/19/record_before_graduation/" rel="next" title="记大学毕业前的阴霾事件">
+                <i class="fa fa-chevron-left"></i> 记大学毕业前的阴霾事件
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2018/06/19/morning_paper_write_behind_logging/" rel="prev" title="Morning Paper - Write-Behind-Logging">
+                Morning Paper - Write-Behind-Logging <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+
+      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

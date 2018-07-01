@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="redis," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="List两年前刚从区域赛回来，开始去读 redis 的源码，当时还是 3.0 时代，list 命令会根据不同的场景使用 adlist 和 ziplist。现在已经完全使用 quicklist 了。 我们可以回顾一下以前的方法：  当 list 较短的时候，使用 ziplist 进行存储，在 list 较长的时候，使用 adlist 存储。具体什么时候会从 ziplist 转到 adlist？red">
+<meta name="keywords" content="redis">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis Internals, Data Manipulation Operations">
+<meta property="og:url" content="http://yoursite.com/2016/12/19/redis_data_manipulation/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="List两年前刚从区域赛回来，开始去读 redis 的源码，当时还是 3.0 时代，list 命令会根据不同的场景使用 adlist 和 ziplist。现在已经完全使用 quicklist 了。 我们可以回顾一下以前的方法：  当 list 较短的时候，使用 ziplist 进行存储，在 list 较长的时候，使用 adlist 存储。具体什么时候会从 ziplist 转到 adlist？red">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T12:43:04.894Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis Internals, Data Manipulation Operations">
+<meta name="twitter:description" content="List两年前刚从区域赛回来，开始去读 redis 的源码，当时还是 3.0 时代，list 命令会根据不同的场景使用 adlist 和 ziplist。现在已经完全使用 quicklist 了。 我们可以回顾一下以前的方法：  当 list 较短的时候，使用 ziplist 进行存储，在 list 较长的时候，使用 adlist 存储。具体什么时候会从 ziplist 转到 adlist？red">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/12/19/redis_data_manipulation/"/>
+
+
+
+
+
+  <title>Redis Internals, Data Manipulation Operations | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/19/redis_data_manipulation/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis Internals, Data Manipulation Operations</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-12-19T00:00:00+08:00">
+                2016-12-19
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="List"><a href="#List" class="headerlink" title="List"></a>List</h2><p>两年前刚从区域赛回来，开始去读 redis 的源码，当时还是 3.0 时代，list 命令会根据不同的场景使用 adlist 和 ziplist。现在已经完全使用 quicklist 了。</p>
+<p>我们可以回顾一下以前的方法：</p>
+<ul>
+<li>当 list 较短的时候，使用 ziplist 进行存储，在 list 较长的时候，使用 adlist 存储。具体什么时候会从 ziplist 转到 adlist？redis 提供了 list-max-ziplist-entries 选项，默认值为 512。如果 ziplist 的元素的个数超过 512，就会从 ziplist 转到 adlist。触发这个转换的时机有：PUSH，LSET 操作。（<code>&lt;=3.0</code>）</li>
+<li>在删除节点的时候并不会尝试去从 adlist 转到 ziplist。（<code>&lt;=3.0</code>）</li>
+</ul>
+<p>显然，一旦一个 list 的生命在某时刻从 ziplist 转换成 adlist，它就再也回不到 ziplist 状态了。这对一个长期运行的程序来讲是不利的，因为可能这个 list 只是遇到了热点才变大，在它慢慢变冷之后应该回到 ziplist。</p>
+<p>可以联想到，说不定会有一些人为了避免 list 永远退化为 adlist，所以选择将一个 adlist 量级的 list sharding 到多个 ziplist 量级的 lists 上，一旦一个 ziplist 满了，就按某种策略进行拆分。这个想法其实就是 quicklist 的思想。</p>
+<p>在 3.2 版本的推进过程中，redis 引入了 quicklist，据说在一些场景可以提升 10x 性能（<a href="https://github.com/antirez/redis/blob/3.2/00-RELEASENOTES#L1824" target="_blank" rel="noopener">3.2 release-notes</a>）。quicklist 的思想是将 adlist 和 ziplist 结合，每个 node 是一个 ziplist，用 doubly linked list 的方式串起来。讲到这里我们基本就可以确定这是个 great idea 了。这里我们不讲具体实现， <a href="http://zhangtielei.com/posts/blog-redis-quicklist.html" target="_blank" rel="noopener">Redis内部数据结构详解(5)——quicklist，zhangtielei</a> 已经讲的足够好了。</p>
+<h2 id="Set"><a href="#Set" class="headerlink" title="Set"></a>Set</h2><p>set 操作是 unordered 的，但是保证唯一性，底层有两种实现，dict 和 intset。对这两个数据结构的简单了解可以看我的博客</p>
+<h2 id="dict"><a href="#dict" class="headerlink" title="dict"></a>dict</h2><p>这里可以吐槽，dict 居然一点不改就直接被拿来做 set。redis 是这么做的：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">## SADD key member</span><br><span class="line">redis&gt; SADD myset &quot;Hello&quot;</span><br><span class="line">(integer) 1</span><br><span class="line">redis&gt; SADD myset &quot;World&quot;</span><br><span class="line">(integer) 1</span><br><span class="line">redis&gt; SADD myset &quot;World&quot;</span><br><span class="line">(integer) 0</span><br><span class="line">redis&gt; SMEMBERS myset</span><br><span class="line">1) &quot;Hello&quot;</span><br><span class="line">2) &quot;World&quot;</span><br></pre></td></tr></table></figure>
+<p>加一个 member 到 myset，底层对应是加一个 dictEntry 到 dict。dictEntry 是一个 key value 组合，这里的 key 是 member，value 是 NULL。这里也是不合理的，之后看看提一个 issue。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (subject-&gt;encoding == OBJ_ENCODING_HT) &#123;</span><br><span class="line">    dict *ht = subject-&gt;ptr;</span><br><span class="line">    dictEntry *de = dictAddRaw(ht,value,<span class="literal">NULL</span>);</span><br><span class="line">    <span class="keyword">if</span> (de) &#123;</span><br><span class="line">        dictSetKey(ht,de,sdsdup(value));</span><br><span class="line">        dictSetVal(ht,de,<span class="literal">NULL</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="intset"><a href="#intset" class="headerlink" title="intset"></a>intset</h2><p>如果集合里都是整数，就使用 intset。intset 是有序的，使用二分搜索，search 效率较高（O(logn)），所以即使 set 不要求有序性，使用 intset 也是合理的。<br>不过由于 intset 使用数组存储，集合一旦大了效率就会降低。redis 提供了 set-max-intset-entries 选项，默认值为 512，如果 intset 所的元素个数大于 512，就将底层存储从 intset 转到 dict。<br>同时，一旦往一个 intset 加入字符串类型的 member，intset 也会自动转换为 dict。</p>
+<p>讲真的，这个实现还不太理想，希望有人把握这个机会写一个 quickset 出来。</p>
+<h2 id="Hash-Table"><a href="#Hash-Table" class="headerlink" title="Hash Table"></a>Hash Table</h2><p>redis 的哈希表实现是这样的，如果 entries 个数小于 hash-max-ziplist-value，就使用 ziplist 来存。<br>这个实现比较奇葩，理论上这不是哈希表，构造如下：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">|--field1--|--value1--|--field2--|--value2--|--...--|</span><br></pre></td></tr></table></figure>
+<p>这就导致此时的 HGET 操作是 O(n) 的，每次都是一个遍历去查。不过由于 ziplist 本身就对 cacheline 有优化，所以在元素数量少的情况下可能是可以容忍的。</p>
+<p>entries 个数大于 <code>hash-max-ziplist-value</code> 的时候使用 dict 来存，这就不说了。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/redis/" rel="tag"># redis</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/12/16/redis_set/" rel="next" title="Redis Internals, SET key value">
+                <i class="fa fa-chevron-left"></i> Redis Internals, SET key value
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/12/31/sofa_pbrpc_rpc_byte_stream/" rel="prev" title="baidu sofa-pbrpc 源码阅读：RpcByteStream">
+                baidu sofa-pbrpc 源码阅读：RpcByteStream <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#List"><span class="nav-number">1.</span> <span class="nav-text">List</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Set"><span class="nav-number">2.</span> <span class="nav-text">Set</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#dict"><span class="nav-number">3.</span> <span class="nav-text">dict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#intset"><span class="nav-number">4.</span> <span class="nav-text">intset</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Hash-Table"><span class="nav-number">5.</span> <span class="nav-text">Hash Table</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

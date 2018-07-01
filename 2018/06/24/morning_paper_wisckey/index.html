@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="morningpaper," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="记录一些 yy 的想法，不值一提。 vlog对分布式 KV 来讲，能不能把 vlog 用作为 paxoslog？ 我所知的两种基于 rocksdb 的典型 KV store 是这样做的：  像 tikv 这样的每次写数据要先写 raftlog，然后写 rocksdb WAL，最后写 rocksdb memtable。一条 value 相当于写 3 次。由于所有 replica 共享一个 rocks">
+<meta name="keywords" content="morningpaper">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Morning Paper - WiscKey, Separating Keys from Values in SSD-Conscious Storage">
+<meta property="og:url" content="http://yoursite.com/2018/06/24/morning_paper_wisckey/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="记录一些 yy 的想法，不值一提。 vlog对分布式 KV 来讲，能不能把 vlog 用作为 paxoslog？ 我所知的两种基于 rocksdb 的典型 KV store 是这样做的：  像 tikv 这样的每次写数据要先写 raftlog，然后写 rocksdb WAL，最后写 rocksdb memtable。一条 value 相当于写 3 次。由于所有 replica 共享一个 rocks">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T09:38:48.404Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Morning Paper - WiscKey, Separating Keys from Values in SSD-Conscious Storage">
+<meta name="twitter:description" content="记录一些 yy 的想法，不值一提。 vlog对分布式 KV 来讲，能不能把 vlog 用作为 paxoslog？ 我所知的两种基于 rocksdb 的典型 KV store 是这样做的：  像 tikv 这样的每次写数据要先写 raftlog，然后写 rocksdb WAL，最后写 rocksdb memtable。一条 value 相当于写 3 次。由于所有 replica 共享一个 rocks">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2018/06/24/morning_paper_wisckey/"/>
+
+
+
+
+
+  <title>Morning Paper - WiscKey, Separating Keys from Values in SSD-Conscious Storage | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/06/24/morning_paper_wisckey/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Morning Paper - WiscKey, Separating Keys from Values in SSD-Conscious Storage</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2018-06-24T00:00:00+08:00">
+                2018-06-24
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>记录一些 yy 的想法，不值一提。</p>
+<h2 id="vlog"><a href="#vlog" class="headerlink" title="vlog"></a>vlog</h2><p>对分布式 KV 来讲，能不能把 vlog 用作为 paxoslog？</p>
+<p>我所知的两种基于 rocksdb 的典型 KV store 是这样做的：</p>
+<ul>
+<li><p>像 tikv 这样的每次写数据要先写 raftlog，然后写 rocksdb WAL，最后写 rocksdb memtable。一条 value 相当于写 3 次。由于所有 replica 共享一个 rocksdb 实例，所以必须要维护 raftlog。</p>
+</li>
+<li><p>pegasus 和 tikv 类似但是关掉了 rocksdb WAL，只写 paxos log。当 rocksdb memtable flush 到 L0 的时候，相应的 paxos log 才可以被 GC。这种方案需要改 rocksdb 代码，但会优于 tikv，一条 value 只需要写 2 次。pegasus 的每个 replica 都独有一个 rocksdb 实例。</p>
+</li>
+</ul>
+<p>现在 wisckey 来了，先写 vlog，再写 LSM index，总的数据只需要写一次。如果用在 tikv 上，WAL 可以省掉，只需维护 raftlog 和 vlog，数据只需写 2 次。如果用在 pegasus 上，paxos log 和 vlog 的合并需要一些改动，因为：</p>
+<ol>
+<li><p>wisckey 的 delete 不写 vlog，只改 LSM index，为了用作 paxoslog，delete 可以改为写 tomb record 到 vlog 中。</p>
+</li>
+<li><p>wisckey 的 vlog 不维护顺序性，在 GC 过程中，一些 record 可能会从 tail 移到 head。所以需保证未提交的日志不可被 GC。</p>
+</li>
+</ol>
+<p>如果能够合并，那数据总的只需要写一次。不过从工程角度讲，合并 paxos log 和 vlog 应当还有更多细节。</p>
+<h2 id="稳定性"><a href="#稳定性" class="headerlink" title="稳定性"></a>稳定性</h2><p>然后我们看看使用 wisckey 是否能获得稳定性提升：</p>
+<p>rocksdb 有个问题就是当 writes 过多的时候容易出现 <strong>write stall</strong>，意为后台来不及 GC 导致 L0 文件数接近上限（<code>level0_file_num_compaction_trigger</code>），只好延阻写。众所周知 L0 的 read 最坏需要遍历所有文件，所以 L0 的文件数上限也不能过大。</p>
+<p>由于这个问题，rocksdb 在大量写的场景写需要调整业务，使用某种读写分离的方案。</p>
+<p>Wisckey 能够解决这个问题：因为 wisckey 高吞吐读写时完全可以不做 GC，最多是空间消耗大，而 rocksdb 不做 GC 则会直接影响读性能。</p>
+<p>当然 wisckey 的后台 GC 也会影响前台工作，这点需要工程实践的权衡。</p>
+<h2 id="Inline-Storage"><a href="#Inline-Storage" class="headerlink" title="Inline Storage"></a>Inline Storage</h2><p>LSM 在小 value （通常小于 128 bytes）的场景下表现优于 wisckey，然而在大 value 下表现劣于 wisckey，所以可以把短 value 直接存在 LSM tree 里。如果 DB 内全都是短 value，那么它就完全退化成 LSM。如果 value size 普遍是大 value，那么 wisckey 的性能优势就能体现出来。</p>
+<p>这种方案完美地融合 LSM 和 wisckey 的长处，工业价值很高。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/morningpaper/" rel="tag"># morningpaper</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2018/06/19/morning_paper_write_behind_logging/" rel="next" title="Morning Paper - Write-Behind-Logging">
+                <i class="fa fa-chevron-left"></i> Morning Paper - Write-Behind-Logging
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2018/06/27/morning_paper_optimizing_space_amplification_in_rocksdb/" rel="prev" title="Morning Paper - optimizing space amplification in rocksdb">
+                Morning Paper - optimizing space amplification in rocksdb <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#vlog"><span class="nav-number">1.</span> <span class="nav-text">vlog</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#稳定性"><span class="nav-number">2.</span> <span class="nav-text">稳定性</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Inline-Storage"><span class="nav-number">3.</span> <span class="nav-text">Inline Storage</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

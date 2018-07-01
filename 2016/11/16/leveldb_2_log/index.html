@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="leveldb," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前面有说到 MANIFEST 用的是日志来记录，这种元数据日志肯定要做 Compaction（leveldb 的 log 文件并不是通过删除冗余日志记录来做 log 的 compaction，而是直接删除过期且无用的 log 文件，参考 DBImpl::DeleteObsoleteFiles），同时也要考虑具体 format（官方文档）。 一般为了能快速定位数据（优化读），设计上会把日志文件切分成">
+<meta name="keywords" content="leveldb">
+<meta property="og:type" content="article">
+<meta property="og:title" content="leveldb 源码解说(2)：Log">
+<meta property="og:url" content="http://yoursite.com/2016/11/16/leveldb_2_log/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="前面有说到 MANIFEST 用的是日志来记录，这种元数据日志肯定要做 Compaction（leveldb 的 log 文件并不是通过删除冗余日志记录来做 log 的 compaction，而是直接删除过期且无用的 log 文件，参考 DBImpl::DeleteObsoleteFiles），同时也要考虑具体 format（官方文档）。 一般为了能快速定位数据（优化读），设计上会把日志文件切分成">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T13:19:16.481Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="leveldb 源码解说(2)：Log">
+<meta name="twitter:description" content="前面有说到 MANIFEST 用的是日志来记录，这种元数据日志肯定要做 Compaction（leveldb 的 log 文件并不是通过删除冗余日志记录来做 log 的 compaction，而是直接删除过期且无用的 log 文件，参考 DBImpl::DeleteObsoleteFiles），同时也要考虑具体 format（官方文档）。 一般为了能快速定位数据（优化读），设计上会把日志文件切分成">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/11/16/leveldb_2_log/"/>
+
+
+
+
+
+  <title>leveldb 源码解说(2)：Log | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/11/16/leveldb_2_log/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">leveldb 源码解说(2)：Log</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-11-16T00:00:00+08:00">
+                2016-11-16
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>前面有说到 MANIFEST 用的是日志来记录，这种元数据日志肯定要做 Compaction（leveldb 的 log 文件并不是通过删除冗余日志记录来做 log 的 compaction，而是直接删除过期且无用的 log 文件，参考 <code>DBImpl::DeleteObsoleteFiles</code>），同时也要考虑具体 format（<a href="https://raw.githubusercontent.com/google/leveldb/master/doc/log_format.txt" target="_blank" rel="noopener">官方文档</a>）。</p>
+<p>一般为了能快速定位数据（优化读），设计上会把日志文件切分成固定大小的 blocks，leveldb 的日志会被分成 32kb 的 blocks。照道理一个 block 可以作为一个文件， 不过这样会让文件系统管理过多的 metadata (inodes)。所以可以把多个 blocks 放在一个文件里。[?] 暂时不知道一个文件最多能放多少 blocks。</p>
+<p>一个 <code>log::Writer</code> 负责对某一个日志执行写操作。日志的切分要考虑 boundary 问题，即考虑一条 record 可能塞不进一个 block 的剩余空间里，这样就需要把这种 record 分成 FIRST, MIDDLE, LAST 三个连续的部分（我们后面会直接称作 fragment）然后塞到多个 blocks 里（其实我觉得多数场景下应该不会有 MIDDLE，因为一条日志一般不会超过 32kb [?]），把可以被塞进一个 block 里的标记为 FULL。</p>
+<p>官方文档给出了 block 的 format，作为磁盘文件格式已经比较 compact 了，后续优化空间不大的样子。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">block := record* trailer?</span><br><span class="line">record :=                    // 其实这里不太严谨，准确说这应该是 fragment，不是 record</span><br><span class="line">     checksum: uint32        // crc32c of type and data[] ; little-endian</span><br><span class="line">     length: uint16          // little-endian</span><br><span class="line">     type: uint8             // One of FULL, FIRST, MIDDLE, LAST</span><br><span class="line">     data: uint8[length]</span><br></pre></td></tr></table></figure>
+<p>block 的实现是比较简单的事情（说实话一般给出 format 设计之后，实现和测试都是时间问题）。这里有必要考虑 checksum 计算的问题，即 crc 计算哪部分的校验和。通常来讲是 length + type + data，这一定是对的，不过 crc 算法本身就包括了字符串长度的检验，我们可以省掉 length 这一项。所以只需要计算 type + data（crc 保证一个校验正确的长度一定是 length+1，这就保证了 length 的正确性，即 type + data 正确，length 一定正确，反之亦然）。leveldb 这里还在 crc 计算中做了小优化，即提前计算好每个 type 的 crc（对应的是 log::Writer::type_crc_），这样就不用每次都重新算一遍。</p>
+<p><code>log::Reader</code> 负责对某一个日志进行读操作。读日志是一次性读一个 block 的量到内存里。<code>log::Reader</code> 的实现有些复杂，因为要考虑到错误处理（主要是 Data Corruption，比如磁盘读到一半磁盘挂了，读的内容小于 blocksize， 但要与 eof 区别对待）。leveldb 设计了 <code>log::Reader::Reporter</code> 来让用户自定义错误处理，比方说统计丢失了多少字节。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Interface for reporting errors.</span></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Reporter</span> &#123;</span></span><br><span class="line"> <span class="keyword">public</span>:</span><br><span class="line">  <span class="keyword">virtual</span> ~Reporter();</span><br><span class="line">  <span class="comment">// Some corruption was detected.  "size" is the approximate number</span></span><br><span class="line">  <span class="comment">// of bytes dropped due to the corruption.</span></span><br><span class="line">  <span class="function"><span class="keyword">virtual</span> <span class="keyword">void</span> <span class="title">Corruption</span><span class="params">(<span class="keyword">size_t</span> bytes, <span class="keyword">const</span> Status&amp; status)</span> </span>= <span class="number">0</span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p><code>log::Reader</code> 有个参数是 initial_offset，表示从中断处开始读日志，它会带来些比较麻烦的边界情况：</p>
+<p>考虑到我们是一个 block 一个 block 依次读的，然而 <code>log::Reader</code> 的 <code>initial_offset_</code> 不一定在 block 的起始处，它很可能在某 block 的中间，为了方便说明，把这个 block 记作 x。我们还是按照规则把整个 x 读到内存。x 的起始处到 initial_offset 这段区间上的 records 我们都忽略掉。<br>读到这个 fragment 之后我们要判断它是不是 MIDDLE 或者 LAST 的，如果是的话，我们就把它忽略，这里需要把因为错误而忽略的字节数报给 reporter。<br>还有一些边界情况：</p>
+<p>我们定义了 <code>record := FULL / FIRST + MIDDLE* + LAST</code>，所以如果出现</p>
+<ul>
+<li>FIRST 后面跟 FULL，报错给 reporter</li>
+<li>FIRST 或者 MIDDLE 后面跟 FIRST，报错给 reporter</li>
+<li>LAST 后面跟 MIDDLE，报错</li>
+<li>type 不是 FULL / FIRST / MIDDLE / LAST 的任何一个，报错</li>
+<li>crc 校验失败，字符串长度和实际不符，报错</li>
+</ul>
+<p>在 <code>log::Reader</code> 的实现里面会看到 resyncing 这个词。在 RAID 1(mirrored) 磁盘阵列里，resync 指的是数据写的时候中途宕机，导致几个磁盘数据不一致，恢复的时候在后台线程重新进行同步，保证几个副本一致性的过程（参考）。在 <code>log::Reader</code> 里，<code>resyncing_</code> 表示我们是否是从一个中断处（&gt;0 的 initial_offset ）开始读日志的。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/leveldb/" rel="tag"># leveldb</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/11/12/leveldb_1_preview/" rel="next" title="leveldb 源码解说(1)：Preview">
+                <i class="fa fa-chevron-left"></i> leveldb 源码解说(1)：Preview
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/12/11/leveldb_3_version/" rel="prev" title="leveldb 源码解说(3)：Version 和 VersionSet">
+                leveldb 源码解说(3)：Version 和 VersionSet <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+
+      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="leveldb," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="Introduction这系列博文被我叫做源码解说，但我并不想太细地描述 leveldb 的代码逻辑，我更希望能够对 leveldb 的各种实现策略进行解读。leveldb 经过这么长时间的发展，其实内部的一些策略已经足以成为教科书式的范例。我提前建议，读者最好对操作系统和数据库有自己的理解再来读。因为我自己也想用 C++11 重写一套兼容 leveldb 接口（其实不太难）的存储引擎。另一方面，">
+<meta name="keywords" content="leveldb">
+<meta property="og:type" content="article">
+<meta property="og:title" content="leveldb 源码解说(1)：Preview">
+<meta property="og:url" content="http://yoursite.com/2016/11/12/leveldb_1_preview/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="Introduction这系列博文被我叫做源码解说，但我并不想太细地描述 leveldb 的代码逻辑，我更希望能够对 leveldb 的各种实现策略进行解读。leveldb 经过这么长时间的发展，其实内部的一些策略已经足以成为教科书式的范例。我提前建议，读者最好对操作系统和数据库有自己的理解再来读。因为我自己也想用 C++11 重写一套兼容 leveldb 接口（其实不太难）的存储引擎。另一方面，">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:image" content="http://og0xhkmh3.bkt.clouddn.com/leveldb_architecture.jpg">
+<meta property="og:updated_time" content="2018-07-01T13:19:25.069Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="leveldb 源码解说(1)：Preview">
+<meta name="twitter:description" content="Introduction这系列博文被我叫做源码解说，但我并不想太细地描述 leveldb 的代码逻辑，我更希望能够对 leveldb 的各种实现策略进行解读。leveldb 经过这么长时间的发展，其实内部的一些策略已经足以成为教科书式的范例。我提前建议，读者最好对操作系统和数据库有自己的理解再来读。因为我自己也想用 C++11 重写一套兼容 leveldb 接口（其实不太难）的存储引擎。另一方面，">
+<meta name="twitter:image" content="http://og0xhkmh3.bkt.clouddn.com/leveldb_architecture.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/11/12/leveldb_1_preview/"/>
+
+
+
+
+
+  <title>leveldb 源码解说(1)：Preview | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/11/12/leveldb_1_preview/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">leveldb 源码解说(1)：Preview</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-11-12T00:00:00+08:00">
+                2016-11-12
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>这系列博文被我叫做源码解说，但我并不想太细地描述 leveldb 的代码逻辑，我更希望能够对 leveldb 的各种实现策略进行解读。leveldb 经过这么长时间的发展，其实内部的一些策略已经足以成为教科书式的范例。我提前建议，读者最好对操作系统和数据库有自己的理解再来读。因为我自己也想用 C++11 重写一套兼容 leveldb 接口（其实不太难）的存储引擎。另一方面，我也会从一个实现者的角度来解说，而不会简单概括原理。如有错误欢迎指出。</p>
+<p>除了我的文章之外，还有一些文章我认为比较好的资料可以阅读：</p>
+<ul>
+<li><a href="http://blog.csdn.net/sparkliang/article/category/1342001" target="_blank" rel="noopener">sparkliang 的leveldb 源码分析</a></li>
+<li><a href="https://github.com/facebook/rocksdb/wiki" target="_blank" rel="noopener">rocksdb wiki</a></li>
+</ul>
+<h2 id="leveldb-介绍"><a href="#leveldb-介绍" class="headerlink" title="leveldb 介绍"></a>leveldb 介绍</h2><p>在这个专题的开始，我们介绍一下 leveldb 的大致原理，这样后面的各个小节可以相互隔离。</p>
+<p><img src="http://og0xhkmh3.bkt.clouddn.com/leveldb_architecture.jpg" alt="leveldb architecture"></p>
+<p>来自 An Efficient Design and Implementation of LSM-Tree based Key-Value Store on Open-Channel SSD。<br>对 leveldb 的介绍有很多了，这篇论文的 2.1节 简单介绍了一下 leveldb。</p>
+<h3 id="LSM"><a href="#LSM" class="headerlink" title="LSM"></a>LSM</h3><p>LSM 的设计是为了减少 random writes，同时保证 acceptable read performance。这里我们给几个 LSM 的结论：</p>
+<ul>
+<li><p>L0 的数据是从 memtable 刷下来的（实现在 <code>DBImpl::WriteLevel0Table</code>），由于 append-only 策略，L0 的 SSTable 内部不会 overlap（所以 SSTable 全称是 Sorted String Table），因为从 memtable 刷下来的时候会做一次 compaction，但是 SSTable 之间会 overlap。</p>
+</li>
+<li><p>L0 往下，每一层的 SSTable 都经过了 compaction 才刷下来的（我们应该把这叫 GC）。所以除了 L0 以外，同层之间不会 overlap，而层与层之间会 overlap。</p>
+</li>
+</ul>
+<h3 id="Glossary"><a href="#Glossary" class="headerlink" title="Glossary"></a>Glossary</h3><ul>
+<li><p>overlap 的含义这里做个简单解释：一个 key 的生命周期里，它可能会被多次 update，也可能会最终被 delete，每次 update 操作都相当于 append 一个新 record，delete 操作也是通过 append 一个 tombstone record ，把前面的操作覆盖掉，这种新版本覆盖旧版本的情况就叫 overlap，这是 append-only 的思想（相信这些对读者应该是废话）。但在 leveldb 上 overlap 的含义又做了扩展：SSTable 由于按 keys 排序，所以一个 SSTable 文件有一个 key range，如果两个 SSTable 的 key range 有交集，也叫作 overlap。</p>
+</li>
+<li><p>compaction 这里也做一个解释：我们把旧版本操作去掉，只留下最新的，这就是 compaction。</p>
+</li>
+</ul>
+<h2 id="从-db-bench-开始"><a href="#从-db-bench-开始" class="headerlink" title="从 db_bench 开始"></a>从 db_bench 开始</h2><p>由于工作原因，我需要去阅读一些项目源码，知乎上有些朋友认为阅读源码先去阅读 main 函数，对大概流程有个了解之后再去针对模块阅读。这本质是对的，但是我们仍然可以有一些取巧的方法，比如读 benchmark 的代码，比如读单元测试的代码。这些经常被忽略的东西其实是阅读源码很好的切入点，能给读者所见即所得的过程。</p>
+<p>我们从 main 函数开始看，这里用的是非常原始的命令行手动解析（连 <code>--help</code> 都没有）。其实 gflags 做 command line flags 还是蛮好用的，不考虑依赖的话应该用 gflags。</p>
+<p>如果不指定的话（<code>--db</code>），leveldb 的日志文件数据文件都会放在 <code>/tmp/leveldb-%d/dbbench</code> 下。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">➜  dbbench ls -lh | awk &apos;&#123;print($5,$9)&#125;&apos;</span><br><span class="line">3.3M 000071.log</span><br><span class="line">2.1M 000080.ldb</span><br><span class="line">2.1M 000081.ldb</span><br><span class="line">...</span><br><span class="line">2.1M 000112.ldb</span><br><span class="line">2.1M 000113.ldb</span><br><span class="line">16 CURRENT</span><br><span class="line">0 LOCK</span><br><span class="line">17K LOG</span><br><span class="line">5.8K MANIFEST-000002</span><br></pre></td></tr></table></figure>
+<p>可以看到非常工整的 2.1M ldb，空的 LOCK 文件，CURRENT 的内容是 ”MANIFEST-000002“，可以推断 CURRENT 指向最新的 MANIFEST。具体的文件名定义可以在 filename.h/cc 里找到。我们可以在 google 官方文档 里看到这些文件的解释。</p>
+<h3 id="leveldb-里的各种文件"><a href="#leveldb-里的各种文件" class="headerlink" title="leveldb 里的各种文件"></a>leveldb 里的各种文件</h3><ul>
+<li><p>MANIFEST 的文件名对应的是 DescriptorFileName，用来持久化一些 leveldb 的 metadata。每次 leveldb 的元数据改变，不会重写 MANIFEST（因为元数据很多，每次都因为一两个元数据的改变就重写的话效率太低），而是使用日志来记录 DB 元数据的改变（append-only）。后续再细讲 MANIFEST。</p>
+</li>
+<li><p>CURRENT 指向最新的 MANIFEST</p>
+</li>
+<li><p>LOCK 即用来做文件锁，后面在 DestroyDB 中会介绍</p>
+</li>
+<li><p>.ldb 文件是存 SSTable 的数据文件，以前叫 .sst，后来因为一些原因所以换了后缀。</p>
+</li>
+</ul>
+<p>benchmark 结果（这块是 SSD 和 SATA 的混合盘）：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">fillseq      :       2.674 micros/op;   41.4 MB/s</span><br><span class="line">fillsync     :    1391.578 micros/op;    0.1 MB/s (1000 ops)</span><br><span class="line">fillrandom   :       4.380 micros/op;   25.3 MB/s</span><br><span class="line">overwrite    :       6.616 micros/op;   16.7 MB/s</span><br><span class="line">readrandom   :       7.241 micros/op; (1000000 of 1000000 found)</span><br><span class="line">readrandom   :       6.575 micros/op; (1000000 of 1000000 found)</span><br><span class="line">readseq      :       0.265 micros/op;  417.4 MB/s</span><br><span class="line">readreverse  :       0.434 micros/op;  254.9 MB/s</span><br><span class="line">compact      :  819660.000 micros/op;</span><br><span class="line">readrandom   :       4.581 micros/op; (1000000 of 1000000 found)</span><br><span class="line">readseq      :       0.243 micros/op;  454.5 MB/s</span><br><span class="line">readreverse  :       0.381 micros/op;  290.6 MB/s</span><br><span class="line">fill100K     :    1334.272 micros/op;   71.5 MB/s (1000 ops)</span><br><span class="line">crc32c       :       4.285 micros/op;  911.5 MB/s (4K per op)</span><br><span class="line">snappycomp   :       5.795 micros/op;  674.1 MB/s (output: 55.1%)</span><br><span class="line">snappyuncomp :       0.841 micros/op; 4643.7 MB/s</span><br><span class="line">acquireload  :       0.416 micros/op; (each op is 1000 loads)</span><br></pre></td></tr></table></figure>
+<p>这里的几个测试写的 benchmark 有 fill 和 overwrite。写测试结束之后默认都需要清空数据库，类似于 DROP TABLE，对应 <code>db_impl.cc/DestroyDB</code>。[?] 调用 DestroyDB 之后再把 DB delete 掉，在下次使用时重新 Open。</p>
+<p>DestroyDB 的参数 dbname（包括 FLAGS_db）即 <code>/tmp/leveldbtest-0/dbbench</code>。删除数据库即将该目录删除。删除该目录还需要考虑并发问题。</p>
+<blockquote>
+<p><strong>文件锁</strong><br>DestroyDB 是通过文件锁来解决并发时候的一致性问题的，相当于每次 DestroyDB 都是一次事务。文件锁有两种概念，一种是多进程场景下的，利用 fcntl 和 flock 来实现，一种是多线程场景下的，我们没有必要使用系统调用，可以直接在用户态内存中维护一个锁表（set实现，申请锁就往 set 里插入文件名，释放锁就 erase 该文件名，如果 set 中已有该文件则操作失败），这样利用简单的 mutex 来实现即可。<br>锁表其实是一种 tradeoff。加锁写时开销大，争抢锁时开销小，优化多线程 contention。加锁过程在锁表加锁，再加文件锁。释放锁就倒个顺序。</p>
+</blockquote>
+<p>benchmark 的执行方法 <code>Benchmark::RunBenchmark</code>：每个 benchmark 都开多个线程（–thread）执行来模拟并发。最后再将多个线程的结果 merge 起来，就是总的结果。当然并发这部分未来还是用 count_down_latch 来实现，leveldb 这种写法比较丑（用一个 SharedState，本质还是 count_down_latch）。</p>
+<ul>
+<li><code>Benchmark::WriteSeq / Benchmark::WriteRandom -&gt; Benchmark::DoWrite</code>。</li>
+</ul>
+<p>顺序写保证有多少个写操作就有多少个 entries， 随机写则不一定，有些写操作可能是 update，leveldb 的更新和插入用的都是 <code>DB::Put</code>。</p>
+<blockquote>
+<p><strong>用 DB::Write 进行写</strong><br>来看写过程：通过 WriteBatch，然后再用 <code>DB::Write</code> 写到数据库中，WriteBatch 相当于一个辅助类，给使用者一个批处理的接口，对用户而言，一个 entry 就是一对 Key + Value，然而对于 leveldb 而言，一个 entry 是 InternalKey + Value。WriteBatch 就是用来将用户的 entry 转化成 leveldb 的 entry。然后组成 batch 一起写到 DB 中。比较形象的形容是，对应到 MySQL 中，我们可以认为是一组 INSERT 语句，然后用一个 Transaction 写到 DB，WriteBatch 就是用来生成这一组 INSERT。</p>
+</blockquote>
+<ul>
+<li><code>Benchmark::ReadSequential</code> 和 <code>Benchmark::ReadReverse</code> 用的是 <code>DB::NewIterator</code> 创建迭代器来遍历。</li>
+</ul>
+<blockquote>
+<p><strong>leveldb 的 Iterator</strong><br>leveldb 的 Iterator 设计优势在于头文件确实干净，缺点在于不那么 modern-c++-style，用完还要 delete。未来我们可以用 <code>silly::IteratorFacade</code>（更干净的 <code>boost::iterator_facade</code>） 来做。</p>
+</blockquote>
+<ul>
+<li><p><code>Benchmark::ReadRandom</code> 就是随机 Key，用 <code>DB::Get</code> 查。<code>Benchmark::ReadHot</code> 比较有意思，随机 Key 的范围更小，应该可以用来测试 cache 性能。</p>
+</li>
+<li><p>这里专门有一个 <code>Benchmark::SeekRandom</code> 的测试，用的是 <code>Iterator::Seek</code>。现在暂时还不清楚 <code>DB::Get</code> 和 <code>Iterator::Seek</code> 有什么区别。</p>
+</li>
+<li><p><code>Benchmark::Compact</code> 会对整个 DB 进行一次 Compact（相信读者已经懂 leveldb 大致原理）。这是 leveldb 的一块很硬的蛋糕，调用 <code>DBImpl::CompactRange</code>。</p>
+</li>
+<li><p><code>Benchmark::SnappyCompress</code> 只是单纯测试 snappy 算法压缩 1G 数据的效率，<code>Benchmark::SnappyUncompress</code> 也只是测试解压效率。一开始还以为是测试加了 snappy 的读写效率。</p>
+</li>
+</ul>
+<p>其实还有其他几个 benchmark，我们可以在 FLAGS_benchmark 加，但是我想等我们深入了解了 leveldb 再回来实际测一番。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/leveldb/" rel="tag"># leveldb</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/03/11/three_methods_to_implement_interface_in_cpp/" rel="next" title="c++ 的三种实现接口的方式">
+                <i class="fa fa-chevron-left"></i> c++ 的三种实现接口的方式
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/11/16/leveldb_2_log/" rel="prev" title="leveldb 源码解说(2)：Log">
+                leveldb 源码解说(2)：Log <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Introduction"><span class="nav-number">1.</span> <span class="nav-text">Introduction</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#leveldb-介绍"><span class="nav-number">2.</span> <span class="nav-text">leveldb 介绍</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#LSM"><span class="nav-number">2.1.</span> <span class="nav-text">LSM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Glossary"><span class="nav-number">2.2.</span> <span class="nav-text">Glossary</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#从-db-bench-开始"><span class="nav-number">3.</span> <span class="nav-text">从 db_bench 开始</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#leveldb-里的各种文件"><span class="nav-number">3.1.</span> <span class="nav-text">leveldb 里的各种文件</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

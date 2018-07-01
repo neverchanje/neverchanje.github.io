@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="rpc," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="原生支持 http 是 sofa 的一个重要需求。官方文档对 HTTP 支持有较完善的描述。 简单运行在了解 HTTP 实现之前，我们可以先了解一下 sofa 的 server 端是如何运行起来的，这里参考源码中的 sample/echo。  启动 RpcServer 之后，我们即可以通过 HTTP 发送请求。 123456789101112131415161718192021# 使用 httpi">
+<meta name="keywords" content="rpc">
+<meta property="og:type" content="article">
+<meta property="og:title" content="baidu sofa-pbrpc 源码阅读：HTTP">
+<meta property="og:url" content="http://yoursite.com/2017/01/08/sofa_pbrpc_http/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="原生支持 http 是 sofa 的一个重要需求。官方文档对 HTTP 支持有较完善的描述。 简单运行在了解 HTTP 实现之前，我们可以先了解一下 sofa 的 server 端是如何运行起来的，这里参考源码中的 sample/echo。  启动 RpcServer 之后，我们即可以通过 HTTP 发送请求。 123456789101112131415161718192021# 使用 httpi">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:image" content="http://og0xhkmh3.bkt.clouddn.com/sofa_server_startup.png">
+<meta property="og:image" content="http://og0xhkmh3.bkt.clouddn.com/sofa_process_http_request.png">
+<meta property="og:updated_time" content="2018-07-01T13:13:54.523Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="baidu sofa-pbrpc 源码阅读：HTTP">
+<meta name="twitter:description" content="原生支持 http 是 sofa 的一个重要需求。官方文档对 HTTP 支持有较完善的描述。 简单运行在了解 HTTP 实现之前，我们可以先了解一下 sofa 的 server 端是如何运行起来的，这里参考源码中的 sample/echo。  启动 RpcServer 之后，我们即可以通过 HTTP 发送请求。 123456789101112131415161718192021# 使用 httpi">
+<meta name="twitter:image" content="http://og0xhkmh3.bkt.clouddn.com/sofa_server_startup.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2017/01/08/sofa_pbrpc_http/"/>
+
+
+
+
+
+  <title>baidu sofa-pbrpc 源码阅读：HTTP | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2017/01/08/sofa_pbrpc_http/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">baidu sofa-pbrpc 源码阅读：HTTP</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2017-01-08T00:00:00+08:00">
+                2017-01-08
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>原生支持 http 是 sofa 的一个重要需求。官方文档对 HTTP 支持有较完善的描述。</p>
+<h2 id="简单运行"><a href="#简单运行" class="headerlink" title="简单运行"></a>简单运行</h2><p>在了解 HTTP 实现之前，我们可以先了解一下 sofa 的 server 端是如何运行起来的，这里参考源码中的 sample/echo。</p>
+<p><img src="http://og0xhkmh3.bkt.clouddn.com/sofa_server_startup.png" alt="sofa-server-startup"></p>
+<p>启动 RpcServer 之后，我们即可以通过 HTTP 发送请求。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"># 使用 httpie 发送 request</span><br><span class="line">http -j -v http://localhost:12321/sofa.pbrpc.test.EchoServer.Echo message=&quot;Hello, world&quot;</span><br><span class="line"># request 内容</span><br><span class="line">POST /sofa.pbrpc.test.EchoServer.Echo HTTP/1.1</span><br><span class="line">Accept: application/json</span><br><span class="line">Accept-Encoding: gzip, deflate, compress</span><br><span class="line">Content-Length: 27</span><br><span class="line">Content-Type: application/json; charset=utf-8</span><br><span class="line">Host: localhost:12321</span><br><span class="line">User-Agent: HTTPie/0.8.0</span><br><span class="line">&#123;</span><br><span class="line">    &quot;message&quot;: &quot;Hello, world&quot;</span><br><span class="line">&#125;</span><br><span class="line"># response 内容</span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Access-Control-Allow-Origin: *</span><br><span class="line">Content-Length: 40</span><br><span class="line">Content-Type: application/json</span><br><span class="line">&#123;</span><br><span class="line">    &quot;message&quot;: &quot;echo message: Hello, world&quot;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="HTTP-Or-Binary"><a href="#HTTP-Or-Binary" class="headerlink" title="HTTP Or Binary"></a>HTTP Or Binary</h2><p>仔细想想会觉得莫名其妙，上面的流程图里，我们没有在任何地方指定使用 HTTP 作为请求的方法，然而 sofa 却可以判断我们使用 HTTP，并且返回 HTTP response。这是否意味着消息传输只能用 HTTP？</p>
+<p>其实并非如此，sofa 还支持 Binary Message 的消息传输方式，具体格式可以参考官方文档。Binary Request 与 HTTP Request 类似，它也具有 header 部分和 body 部分。Binary Message 相比 HTTP message 最大的不同在于，整个信息使用的是尽可能紧凑高效的序列化二进制，而非简单可读的文本。</p>
+<p>Binary Request 的 header 部分前四字节为 magic string，而 HTTP Request 的 header 部分前四字节为 method 字段（sofa 只支持 POST 和 GET）。所以我们可以通过 request message 的前四个字节，判断请求是 Binary Request 还是 HTTP Request。具体流程如下：</p>
+<p>服务端接收请求，通过确认 magic string（<code>HTTPRpcRequestParser::CheckMagicString</code>），可以知道该请求是一个 HttpRpcRequest，随后即进行处理（<code>HTTPRpcRequest::ProcessRequest</code>）。</p>
+<h2 id="Servlet：用-sofa-做-web-服务器"><a href="#Servlet：用-sofa-做-web-服务器" class="headerlink" title="Servlet：用 sofa 做 web 服务器"></a>Servlet：用 sofa 做 web 服务器</h2><p>通过上图我们可以看到，除了利用 protobuf 做 RPC 以外，sofa 还能直接拿来写 web 服务器。我们可以在某个 URL 子目录（path）下注册回调函数（<code>RpcServerImpl::RegisterWebServlet</code>），这样就可以在访问某个 URL 的时候执行对应操作。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">http http://localhost:12321/hello</span><br><span class="line"># response 内容</span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Access-Control-Allow-Origin: *</span><br><span class="line">Content-Length: 41</span><br><span class="line">Content-Type: text/html; charset=UTF-8</span><br><span class="line">&lt;h1&gt;Hello from sofa-pbrpc web server&lt;/h1&gt;</span><br></pre></td></tr></table></figure>
+<p>Servlet 就是这里的回调函数。Server 接收 HTTPRequest，经过 Servlet 的处理，返回 HTTPResponse：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> ExtClosure&lt;<span class="keyword">bool</span>(<span class="keyword">const</span> HTTPRequest&amp;, HTTPResponse&amp;)&gt;* Servlet;</span><br></pre></td></tr></table></figure>
+<p>上面的例子里，我们的 Servlet 接收到任何 request，都会返回 <code>&lt;h1&gt;Hello from sofa-pbrpc web server&lt;/h1&gt;</code>。</p>
+<p>其实非要拿 sofa 做 web 服务器就太牵强了，我们更应该用其他更广泛使用的开源 web 服务器。sofa 实现 servlet 的一个重要理由其实是可以<a href="https://github.com/baidu/sofa-pbrpc/wiki/%E9%AB%98%E7%BA%A7%E4%BD%BF%E7%94%A8#web%E7%9B%91%E6%8E%A7" target="_blank" rel="noopener">做监控页面（建议读者自己尝试一下）</a>。每个内置的监控页面都注册了对应的 Servlet。本质上用户也可以针对自己的使用，注册相应的 web 监控页面。</p>
+<p>能想出这个功能也是很可爱。因为正常情况下都是返回一个 JSON，谁会自己用 C++ 写个 html 出来。不过当然这也启发我们联想，可能我们有一个特殊的 RPC server，它的监控信息需要用前端渲染，这时候用 C++ 写 html 是绝对不行的。我们可以嵌入 JS，可以加 css。</p>
+<h2 id="请求使用-JSON-还是序列化的-protobuf"><a href="#请求使用-JSON-还是序列化的-protobuf" class="headerlink" title="请求使用 JSON 还是序列化的 protobuf"></a>请求使用 JSON 还是序列化的 protobuf</h2><p>HTTP 的 request body 默认以 JSON 传输。还是用 <a href="https://github.com/baidu/sofa-pbrpc/tree/master/sample/echo" target="_blank" rel="noopener">sample/echo</a> 中的 EchoService 作为例子。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"># 使用 POST</span><br><span class="line">curl -d &apos;&#123;&quot;message&quot;:&quot;Hello, world!&quot;&#125;&apos; http://localhost:12321/sofa.pbrpc.test.EchoServer.Echo</span><br><span class="line"># 使用 GET</span><br><span class="line">curl http://localhost:12321/sofa.pbrpc.test.EchoServer.Echo?request=%7B%22message%22%3A%22Hello%2C%20world%21%22%7D</span><br></pre></td></tr></table></figure>
+<p>我们可以用 POST 和 GET 发送 JSON 请求。JSON 的格式必须符合 proto 规定的 schema。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">message EchoRequest &#123;</span><br><span class="line">    required string message = 1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所以我们发送的 JSON 一定要有且只有 message 这一项。Server 会对 JSON 的格式进行检验（<code>pbjson.cc:jsonobject2pb</code>）。</p>
+<p><img src="http://og0xhkmh3.bkt.clouddn.com/sofa_process_http_request.png" alt="sofa process http request"></p>
+<p>HTTP 同样可以直接发送序列化的 protobuf 作为 request body。但是必须使用 sofa 自定义的 POST_PB 方法。</p>
+<h2 id="ServiceBoard-和-MethodBoard"><a href="#ServiceBoard-和-MethodBoard" class="headerlink" title="ServiceBoard 和 MethodBoard"></a>ServiceBoard 和 MethodBoard</h2><p>一个 RPC Server 一般注册了多个 services。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/rpc/" rel="tag"># rpc</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/12/31/sofa_pbrpc_rpc_byte_stream/" rel="next" title="baidu sofa-pbrpc 源码阅读：RpcByteStream">
+                <i class="fa fa-chevron-left"></i> baidu sofa-pbrpc 源码阅读：RpcByteStream
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2017/01/15/morning_paper_use_of_formal_methods_at_aws/" rel="prev" title="Morning Paper - Use of Formal Methods at Amazon Web Services">
+                Morning Paper - Use of Formal Methods at Amazon Web Services <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#简单运行"><span class="nav-number">1.</span> <span class="nav-text">简单运行</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTP-Or-Binary"><span class="nav-number">2.</span> <span class="nav-text">HTTP Or Binary</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Servlet：用-sofa-做-web-服务器"><span class="nav-number">3.</span> <span class="nav-text">Servlet：用 sofa 做 web 服务器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#请求使用-JSON-还是序列化的-protobuf"><span class="nav-number">4.</span> <span class="nav-text">请求使用 JSON 还是序列化的 protobuf</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ServiceBoard-和-MethodBoard"><span class="nav-number">5.</span> <span class="nav-text">ServiceBoard 和 MethodBoard</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

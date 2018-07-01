@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="leveldb," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="DBImpl::MaybeScheduleCompactionleveldb 默认做单线程 GC，如果已有 GC 在后台运行，则不会去再开一个 GC 线程。其实复杂的策略应该支持多 GC 调度，后面我们应该可以在 rocksdb 里看到。 简单情况下 GC 可以周期性地做，比如每隔 100ms 做一次。当然这在存储引擎里是行不通的，因为存储引擎永远无法预料何时突然迎来暴风骤雨般的写请求，这时候定时">
+<meta name="keywords" content="leveldb">
+<meta property="og:type" content="article">
+<meta property="og:title" content="leveldb 源码解说(4)：Automatic Compaction &#x2F; GC">
+<meta property="og:url" content="http://yoursite.com/2016/12/11/leveldb_4_gc/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="DBImpl::MaybeScheduleCompactionleveldb 默认做单线程 GC，如果已有 GC 在后台运行，则不会去再开一个 GC 线程。其实复杂的策略应该支持多 GC 调度，后面我们应该可以在 rocksdb 里看到。 简单情况下 GC 可以周期性地做，比如每隔 100ms 做一次。当然这在存储引擎里是行不通的，因为存储引擎永远无法预料何时突然迎来暴风骤雨般的写请求，这时候定时">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T13:27:18.548Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="leveldb 源码解说(4)：Automatic Compaction &#x2F; GC">
+<meta name="twitter:description" content="DBImpl::MaybeScheduleCompactionleveldb 默认做单线程 GC，如果已有 GC 在后台运行，则不会去再开一个 GC 线程。其实复杂的策略应该支持多 GC 调度，后面我们应该可以在 rocksdb 里看到。 简单情况下 GC 可以周期性地做，比如每隔 100ms 做一次。当然这在存储引擎里是行不通的，因为存储引擎永远无法预料何时突然迎来暴风骤雨般的写请求，这时候定时">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/12/11/leveldb_4_gc/"/>
+
+
+
+
+
+  <title>leveldb 源码解说(4)：Automatic Compaction / GC | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/11/leveldb_4_gc/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">leveldb 源码解说(4)：Automatic Compaction / GC</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-12-11T00:00:00+08:00">
+                2016-12-11
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="DBImpl-MaybeScheduleCompaction"><a href="#DBImpl-MaybeScheduleCompaction" class="headerlink" title="DBImpl::MaybeScheduleCompaction"></a>DBImpl::MaybeScheduleCompaction</h2><p>leveldb 默认做单线程 GC，如果已有 GC 在后台运行，则不会去再开一个 GC 线程。其实复杂的策略应该支持多 GC 调度，后面我们应该可以在 rocksdb 里看到。</p>
+<p>简单情况下 GC 可以周期性地做，比如每隔 100ms 做一次。当然这在存储引擎里是行不通的，因为存储引擎永远无法预料何时突然迎来暴风骤雨般的写请求，这时候定时 GC 可能会帮倒忙。</p>
+<p>我罗列一下哪些地方会触发 GC（也就是触发 MaybeScheduleCompaction）：</p>
+<ul>
+<li>DBImpl::MakeRoomForWrite：后面会讲到。</li>
+<li>DBImpl::Open：启动的时候做一次 GC 准没错。不过我暂时没有比较有说服力的解释。</li>
+<li>DBImpl::Get：seek compaction 触发，后面会讲到。</li>
+<li>Manual Compaction。</li>
+</ul>
+<h2 id="DBImpl-BackgroundCompaction"><a href="#DBImpl-BackgroundCompaction" class="headerlink" title="DBImpl::BackgroundCompaction"></a>DBImpl::BackgroundCompaction</h2><p>GC 操作入口在这里。</p>
+<p>如果有 immutable memtable（我们简称 im-memtable） 还没刷到 L0 层，则 Ln 的 GC 推迟，先刷 im-memtable。换言之，im-memtable GC 的执行优先级比 Ln&gt;=0 GC 要高。这是因为如果 memtable 满了（大于 option.write_buffer_size），而 im-memtable 还没做 GC，整个 DB 都会被阻塞（DBImpl::MakeRoomForWrite，阻塞用的是一个 condition variable，bg_cv_）。本质上任何 Ln&gt;=0 层的 GC 都只是优化罢了，而 memtable 塞满造成 DB 阻塞是不可容忍的。</p>
+<p>接下来选择哪个 level 来做 compaction 呢？后面我们在 VersionSet::PickCompaction 会讲到。</p>
+<p>接着 GC 操作落到 DoCompactionWork。</p>
+<h2 id="DBImpl-DoCompactionWork"><a href="#DBImpl-DoCompactionWork" class="headerlink" title="DBImpl::DoCompactionWork"></a>DBImpl::DoCompactionWork</h2><p>在这里我们就会真正的做 Ln|Ln+1 compaction 了。用 MergingIterator 遍历所有的 keys，忽略那些 overlap 的 keys。最终新的数据会被写到。</p>
+<p>值得一提的是，每次遍历一个 key，都会检查一次 im-memtable（CompactMemtable），避免 GC 花的时间太长，阻塞了 memtable。</p>
+<p>随着程序运行，level n&gt;=0 会做 compaction，把数据清到 n+1 层。这里要考虑 在什么时候 leveldb 会让这个 level 做 compaction？<br>参考 <code>version_set.cc:Version::Builder::Apply</code> 底下的一段注释：</p>
+<h2 id="VersionSet-PickCompaction"><a href="#VersionSet-PickCompaction" class="headerlink" title="VersionSet::PickCompaction"></a>VersionSet::PickCompaction</h2><p>compaction 的选择策略有两种，一种是 seek compaction，一种是 size compaction。</p>
+<h3 id="seek-compaction"><a href="#seek-compaction" class="headerlink" title="seek compaction"></a>seek compaction</h3><p>这是由于某个文件的内容被过多访问（负载过大），多次 seek 的开销下，一次 compaction 的开销是可以容忍的。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// We arrange to automatically compact this file after</span></span><br><span class="line"><span class="comment">// a certain number of seeks.  Let's assume:</span></span><br><span class="line"><span class="comment">//   (1) One seek costs 10ms</span></span><br><span class="line"><span class="comment">//   (2) Writing or reading 1MB costs 10ms (100MB/s)</span></span><br><span class="line"><span class="comment">//   (3) A compaction of 1MB does 25MB of IO:</span></span><br><span class="line"><span class="comment">//         1MB read from this level</span></span><br><span class="line"><span class="comment">//         10-12MB read from next level (boundaries may be misaligned)</span></span><br><span class="line"><span class="comment">//         10-12MB written to next level</span></span><br><span class="line"><span class="comment">// This implies that 25 seeks cost the same as the compaction</span></span><br><span class="line"><span class="comment">// of 1MB of data.  I.e., one seek costs approximately the</span></span><br><span class="line"><span class="comment">// same as the compaction of 40KB of data.  We are a little</span></span><br><span class="line"><span class="comment">// conservative and allow approximately one seek for every 16KB</span></span><br><span class="line"><span class="comment">// of data before triggering a compaction.</span></span><br><span class="line">f-&gt;allowed_seeks = (f-&gt;file_size / <span class="number">16384</span>);</span><br><span class="line"><span class="keyword">if</span> (f-&gt;allowed_seeks &lt; <span class="number">100</span>) f-&gt;allowed_seeks = <span class="number">100</span>;</span><br><span class="line">levels_[level].deleted_files.erase(f-&gt;number);</span><br><span class="line">levels_[level].added_files-&gt;insert(f);</span><br></pre></td></tr></table></figure>
+<p>我们知道 <code>DBImpl::Get</code> 可能会从 memtable 中查，查不到就在 SSTable 中查。如果在某一个文件上的查询次数太多（多于 allowed_seeks，参考 <code>Version::UpdateStats</code>），则会针对这个文件进行一次 GC。上面的注释里说到了这么做的原因：一次查询的开销相当于对 40kb 做一次 compaction 的开销，所以对大小为 x 的文件做一次 compaction 的开销，等于 x/40kb 次查询的开销。而真实情况需要更保守，leveldb 选择在 x/16kb 次查询之后，就需要做一次 compaction。</p>
+<h3 id="size-compaction"><a href="#size-compaction" class="headerlink" title="size compaction"></a>size compaction</h3><p>这是由于某层的大小过大。我们在 <code>VersionSet::Finalize</code> 对其细细描述。</p>
+<p>当然如果两个 level 同时超过限制，两个 GC 会依次做，同一时间不会有两个 GC 在进行。GC 是一个后台线程，利用了 PosixEnv::Schedule，这是一个生产者消费者队列，当然消费者只有一个。</p>
+<h2 id="DBImpl-MakeRoomForWrite"><a href="#DBImpl-MakeRoomForWrite" class="headerlink" title="DBImpl::MakeRoomForWrite"></a>DBImpl::MakeRoomForWrite</h2><p>但这样在高并发写的场景下，Ln GC 可能会经常没有办法做，而 L0 会越积越多。为了防止这种情况发生，leveldb 给 L0 的大小设限（参考 config::kL0_SlowdownWritesTrigger）。当 L0 的大小超过了这个限制，在写操作执行之前，leveldb 会强制进行 Ln GC。这里 leveldb 不会让 GC 一次性全部完成，这样会导致 write latency 太大。所以我们总结 leveldb 的策略是，L0 过大的情况下，在写数据之前，先做短时间的（1ms，暂不可配置） GC。</p>
+<p>如果当前暂时不需要做 im-memtable GC，而我们的 L0 确实过大了（大于 config::kL0_StopWritesTrigger），则在写操作执行之前，整个 DB 会暂停下来先做 Ln GC。</p>
+<p>每次 memtable 一满，memtable 就把所有数据交给 im-memtable，然后自己创建一个新的，空的 memtable。DBImpl::CompactMemTable 用来把 im-memtable 写到 L0。当然，每次生成 L0 文件，都要用 VersionEdit 记录这次改动。</p>
+<p>Ln 把 compaction 的结果写到 Ln+1 层，那原来的 Ln 层就需要删了。另一方面由于引用计数机制，我们不能删计数器大于 1 的文件。这就是 DBImpl::DeleteObsoleteFiles()。</p>
+<p>Ln 和 Ln+1 两层合并的时候需要让能够 merge 的数据尽可能多，尽可能不会浪费（参考 VersionSet::SetupOtherInputs）。</p>
+<h2 id="VersionSet-Finalize"><a href="#VersionSet-Finalize" class="headerlink" title="VersionSet::Finalize"></a>VersionSet::Finalize</h2><p>size compaction 通过给各个 level 打分，评选出分数最高的 level 来做 compaction。</p>
+<h2 id="Compaction-ShouldStopBefore"><a href="#Compaction-ShouldStopBefore" class="headerlink" title="Compaction::ShouldStopBefore"></a>Compaction::ShouldStopBefore</h2><p>这里是让 Ln GC 提前结束的策略。这个策略很奇怪，避免 compaction 结果和 Ln+2 有过多重叠，</p>
+<h2 id="DBImpl-WriteLevel0Table"><a href="#DBImpl-WriteLevel0Table" class="headerlink" title="DBImpl::WriteLevel0Table"></a>DBImpl::WriteLevel0Table</h2><p>这里其实就是把 im-memtable 刷到 L0 的过程，一开始我以为很简单，一个写文件就好了。其实不然，没有人说 im-memtable 只能被刷到 L0。我们只要保证：如果一个 key 在 Ln 和 Lm 存在，且 m&gt;n，那么 Ln 上的 sequence number 大于 Lm 上的 sequence number。为什么不直接把 im-memtable 刷到 L0？很简单，为了减小 L0 compaction 的压力，把 GC 分散到下层，分散各层 GC 的负载。</p>
+<p>现在问题来了，im-memtable 应该被刷到哪个 level？我们找与 im-memtable 有 overlap 的那个 level n，则插入到 n-1 层。这样就能保证上述的要求。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/leveldb/" rel="tag"># leveldb</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/12/11/leveldb_3_version/" rel="next" title="leveldb 源码解说(3)：Version 和 VersionSet">
+                <i class="fa fa-chevron-left"></i> leveldb 源码解说(3)：Version 和 VersionSet
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/12/14/redis_sds/" rel="prev" title="Redis Internals, sds">
+                Redis Internals, sds <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#DBImpl-MaybeScheduleCompaction"><span class="nav-number">1.</span> <span class="nav-text">DBImpl::MaybeScheduleCompaction</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#DBImpl-BackgroundCompaction"><span class="nav-number">2.</span> <span class="nav-text">DBImpl::BackgroundCompaction</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#DBImpl-DoCompactionWork"><span class="nav-number">3.</span> <span class="nav-text">DBImpl::DoCompactionWork</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VersionSet-PickCompaction"><span class="nav-number">4.</span> <span class="nav-text">VersionSet::PickCompaction</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#seek-compaction"><span class="nav-number">4.1.</span> <span class="nav-text">seek compaction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#size-compaction"><span class="nav-number">4.2.</span> <span class="nav-text">size compaction</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#DBImpl-MakeRoomForWrite"><span class="nav-number">5.</span> <span class="nav-text">DBImpl::MakeRoomForWrite</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VersionSet-Finalize"><span class="nav-number">6.</span> <span class="nav-text">VersionSet::Finalize</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Compaction-ShouldStopBefore"><span class="nav-number">7.</span> <span class="nav-text">Compaction::ShouldStopBefore</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#DBImpl-WriteLevel0Table"><span class="nav-number">8.</span> <span class="nav-text">DBImpl::WriteLevel0Table</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

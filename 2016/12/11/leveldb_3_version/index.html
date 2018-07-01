@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans,en">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="leveldb," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="在阅读这篇文章之前希望读者先阅读 rocksdb wiki 关于 Version 和 VersionEdit 的介绍，其实很多东西在这里已经介绍的很清楚了。  Version 和 VersionSet 是 leveldb 最乱的地方之一。看的时候要保持思考保持清醒（这是个软件工程问题）。先看 Version::Get。 VersionVersion 管理磁盘上所有文件的元信息（简单说就是所有 SS">
+<meta name="keywords" content="leveldb">
+<meta property="og:type" content="article">
+<meta property="og:title" content="leveldb 源码解说(3)：Version 和 VersionSet">
+<meta property="og:url" content="http://yoursite.com/2016/12/11/leveldb_3_version/index.html">
+<meta property="og:site_name" content="neverchanje">
+<meta property="og:description" content="在阅读这篇文章之前希望读者先阅读 rocksdb wiki 关于 Version 和 VersionEdit 的介绍，其实很多东西在这里已经介绍的很清楚了。  Version 和 VersionSet 是 leveldb 最乱的地方之一。看的时候要保持思考保持清醒（这是个软件工程问题）。先看 Version::Get。 VersionVersion 管理磁盘上所有文件的元信息（简单说就是所有 SS">
+<meta property="og:locale" content="zh-Hans,en">
+<meta property="og:updated_time" content="2018-07-01T13:27:20.944Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="leveldb 源码解说(3)：Version 和 VersionSet">
+<meta name="twitter:description" content="在阅读这篇文章之前希望读者先阅读 rocksdb wiki 关于 Version 和 VersionEdit 的介绍，其实很多东西在这里已经介绍的很清楚了。  Version 和 VersionSet 是 leveldb 最乱的地方之一。看的时候要保持思考保持清醒（这是个软件工程问题）。先看 Version::Get。 VersionVersion 管理磁盘上所有文件的元信息（简单说就是所有 SS">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2016/12/11/leveldb_3_version/"/>
+
+
+
+
+
+  <title>leveldb 源码解说(3)：Version 和 VersionSet | neverchanje</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans,en">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">neverchanje</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            About
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            Tags
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-post" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/12/11/leveldb_3_version/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="neverchanje">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="neverchanje">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">leveldb 源码解说(3)：Version 和 VersionSet</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-12-11T00:00:00+08:00">
+                2016-12-11
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p>在阅读这篇文章之前希望读者先阅读 <a href="https://github.com/facebook/rocksdb/wiki/MANIFEST" target="_blank" rel="noopener">rocksdb wiki 关于 Version 和 VersionEdit 的介绍</a>，其实很多东西在这里已经介绍的很清楚了。</p>
+<hr>
+<p>Version 和 VersionSet 是 leveldb 最乱的地方之一。看的时候要保持思考保持清醒（这是个软件工程问题）。先看 <code>Version::Get</code>。</p>
+<h2 id="Version"><a href="#Version" class="headerlink" title="Version"></a>Version</h2><p>Version 管理磁盘上所有文件的元信息（简单说就是所有 SSTables 的 metadata），比方说哪一层有哪些文件，并且为了提升效率，我们要在内存中维护这些文件的 FileMetaData，这样我们就不用每次都去读文件才能得知每个文件的 key range。这些元数据交给 Version 来维护。每次删掉一个文件，都会导致 Version 被改变，产生出一个新的 Version。能够表现当前 DB 状态的 Version，被称作 current version 。所有 Version 都被 VersionSet 用一个循环双向链表维护起来。</p>
+<p>其实这就有点类似 MVCC 了。MVCC 是数据库解决并发问题的时候一个很常见的概念。利用版本号的一种实现是，并发的时候数据行有多个版本用链表串在一起，写的时候拷贝一份快照出来写，加上版本号之后就变成新版本插到链表里，每个读事务只能读比自己版本号更小的，所以本质上读的时候可以进行写操作。（参考 张帅同学在知乎的回答）</p>
+<p>leveldb 也需要类似的思想。我们后面会讲到 leveldb compaction 的机制，简单说就是 leveldb 时不时的会对一些文件进行清理（可以看成是做压缩），然后把清理干净后的数据放到新的文件集合里，这样就导致同一份数据有两批文件，旧的那一批按道理应该删掉，但是如果现在有读事务在旧的那批文件上，则暂时还不能删。所以我们利用引用计数的机制，只要一个 Version 还存活着，那么它管理的所有文件都不会被删，而一旦 Version 生命周期结束，则它管理的所有文件引用计数全部减一（参考 Version::~Version），当没有一个 Version 引用这个文件，那这个文件就可以直接删了。在引用计数这一方面，还要考虑多个用户访问这个 Version 的情况。也就是说，除了文件要引用计数，Version 自己也要引用计数。</p>
+<p>这里有一点要注意，memtable 不归 current version 管理。只有磁盘上的数据才归 Version 管理。不过当然，memtable 本身也有引用计数。所以在 DBImpl::Get 的时候，current，memtable，im-memtable 的引用计数都会加 1，在结束的时候减一。这样就保证读的时候 memtable 不会突然被删。</p>
+<h2 id="Version-Get"><a href="#Version-Get" class="headerlink" title="Version::Get"></a>Version::Get</h2><p><code>Version::Get()</code> 查询一个 key 对应的 value，这是 leveldb 查询 key 的核心过程（划重点）。了解这步操作之前，我们首先需要知道 leveldb 的大致执行流程：首先数据会先写到 memtable，当 memtable 超过一定大小限制，数据会被持久化到 L0，为了避免在写到 L0 的同时 memtable 不可写的情况，memtable 会专门拷贝一份到 immutable memtable，顾名思义是只读的，相当于一份快照，然后利用 immutable memtable 把这份快照写到 L0。</p>
+<p>执行到 <code>Version::Get</code> 这步之前（参照 <code>DBImpl::Get</code>），我们已经得知 memtable 和 immutable memtable 中没有对应 key，所以我们从 SSTable 中查（这里说的不够准确，后续再提）。查询过程显然是从上到下（level 0 -&gt; level 1 -&gt; … ）逐层遍历，这是因为 LSM tree 已经定义越新的越处于上层，所以我们一定是选择版本最新的，即含有 key 的最上层。</p>
+<p>对于每一层的查询，首要的一个逻辑是定位 key 在哪一个文件，然后定位 key 在这个文件的位置，最终获得 key 的 value。</p>
+<ol>
+<li>在 level 0 定位 key：所以我们可以按照 file number 从大到小排序（越大的越新）然后依次遍历，每个文件都会有一个 key range（参照 FileMetaData），如果我们的 key 在该 range 里，则我们尝试在该文件里二分查找这个 key，如果 key 不在 range 里则 continue。通过 key range 过滤只是一种比较简单的优化，在 L0 的查询终究是比较慢的，所以 L0 的文件数必须要足够少（最坏情况下每个文件都要读一遍）。</li>
+<li>在 level n (n&gt;0) 定位 key：在 level n &gt; 0 上，SSTables 之间的 key ranges 不会相交，我们可以利用这点进行二分找到指定文件 （参照 version_set.c:FindFile），然后在文件里进行二分找到 key（参照 TableCache::Get）。</li>
+<li>如果找到的 key 对应的是 Delete record，那说明这个 key 已经被删了，返回 Status::NotFound。</li>
+</ol>
+<p><code>Version::Get</code> 最后会返回 key 对应的 value，key 所在的文件（GetStats）。</p>
+<h2 id="VersionSet-LogAndApply"><a href="#VersionSet-LogAndApply" class="headerlink" title="VersionSet::LogAndApply"></a>VersionSet::LogAndApply</h2><p>顾名思义这个函数是用来把 VersionEdit 加到 Version 里成为新的 Version。同时这个过程也会持久化到 Manifest 上。由于涉及到磁盘 IO，不可能在每次 version 改变的时候都执行一次 LogAndApply，通常是批量做。因此，VersionEdit 中包含了一系列对 Version 的修改，包括添加了某个文件，删除了某个文件。把 VersionEdit 加到 Version 里的过程本质和 git commit 是一样的，都是旧版本经过一系列修改之后产生新版本，使用 VersionSet::Builder 执行这段过程，算法很简单，实现看起来却很复杂。</p>
+<p>写 MANIFEST 的过程我们知道就是一个写日志的过程，每条 record 意味着有一组的元数据被改变， 每组改变用 VersionEdit 构造，然后 <code>VersionEdit::EncodeTo</code> 写到 record 字符串，最后用 <code>log::Writer::AddRecord</code> 写到日志里。VersionEdit 的内部构造会保证 record 的 compactness（record 里的元数据是 key value 表示，key 是元数据类型，使用 enum 标记，用 varint 存储，不同类型的元数据 value 存储方式不一样，使用 varint 和 varstring 结合存储）。</p>
+<p>这里可以总结一下，有下面几个操作会执行 LogAndApply：</p>
+<ol>
+<li>memtable 刷到 L0 的时候（<code>DBImpl::CompactMemtable</code>），VersionEdit 会在这里记录新的 wal 编号，将 L0 的 FileMetaData 维护起来。</li>
+<li>进行 compaction 的时候。VersionEdit 会记录 compaction 导致的文件增加和删除操作。</li>
+</ol>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/leveldb/" rel="tag"># leveldb</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2016/11/16/leveldb_2_log/" rel="next" title="leveldb 源码解说(2)：Log">
+                <i class="fa fa-chevron-left"></i> leveldb 源码解说(2)：Log
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2016/12/11/leveldb_4_gc/" rel="prev" title="leveldb 源码解说(4)：Automatic Compaction / GC">
+                leveldb 源码解说(4)：Automatic Compaction / GC <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.jpg"
+                alt="neverchanje" />
+            
+              <p class="site-author-name" itemprop="name">neverchanje</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">26</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/neverchanje" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Version"><span class="nav-number">1.</span> <span class="nav-text">Version</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Version-Get"><span class="nav-number">2.</span> <span class="nav-text">Version::Get</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VersionSet-LogAndApply"><span class="nav-number">3.</span> <span class="nav-text">VersionSet::LogAndApply</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">neverchanje</span>
+
+  
+</div>
+
+
+  <div class="powered-by">Powered by <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a></div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">Theme &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
